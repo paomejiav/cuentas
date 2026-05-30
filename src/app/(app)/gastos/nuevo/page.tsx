@@ -102,7 +102,8 @@ export default function NuevoGastoPage() {
 
   // Paso 1 — datos del gasto
   const [descripcion, setDescripcion] = useState('')
-  const [montoStr, setMontoStr] = useState('')
+  const [monto, setMonto] = useState(0)
+  const [displayMonto, setDisplayMonto] = useState('')
   const [pagadoPor, setPagadoPor] = useState('')
   const [categoria, setCategoria] = useState<Categoria>('comida')
   const [fecha, setFecha] = useState(() => new Date().toISOString().slice(0, 10))
@@ -113,7 +114,12 @@ export default function NuevoGastoPage() {
   const [tipoDivision, setTipoDivision] = useState<TipoDivision>('igual')
   const [divisionValues, setDivisionValues] = useState<DivisionInput[]>([])
 
-  const monto = parseFloat(montoStr.replace(/\./g, '').replace(',', '.')) || 0
+  function handleMontoChange(e: React.ChangeEvent<HTMLInputElement>) {
+    const digits = e.target.value.replace(/\D/g, '')
+    const numeric = parseInt(digits || '0', 10)
+    setMonto(numeric)
+    setDisplayMonto(numeric > 0 ? '$' + numeric.toLocaleString('es-CL') : '')
+  }
 
   // Cargar integrantes al montar
   useEffect(() => {
@@ -293,32 +299,24 @@ export default function NuevoGastoPage() {
             {/* Monto — prominente */}
             <Section>
               <Label htmlFor="input-monto">Monto total</Label>
-              <div style={{ position: 'relative' }}>
-                <span aria-hidden="true" style={{
-                  position: 'absolute', left: 16, top: '50%', transform: 'translateY(-50%)',
-                  fontSize: 22, fontWeight: 700,
-                  color: montoStr ? 'var(--color-text-primary)' : 'var(--color-text-disabled)',
-                  fontFamily: 'var(--font-lora), serif', pointerEvents: 'none',
-                }}>$</span>
-                <input
+              <input
                   id="input-monto"
                   type="text"
                   inputMode="numeric"
-                  pattern="[0-9]*"
-                  placeholder="0"
+                  placeholder="$0"
                   autoComplete="off"
-                  value={montoStr}
-                  onChange={e => setMontoStr(e.target.value.replace(/[^0-9]/g, ''))}
+                  value={displayMonto}
+                  onChange={handleMontoChange}
                   aria-invalid={!!errores.monto}
                   aria-describedby={errores.monto ? 'error-monto' : undefined}
                   style={{
-                    ...inputBase, height: 64, paddingLeft: 32,
+                    ...inputBase, height: 64,
                     fontSize: 28, fontWeight: 700, fontFamily: 'var(--font-lora), serif',
+                    textAlign: 'center',
                   }}
                   onFocus={e => { e.target.style.outline = '2px solid var(--color-cta)'; e.target.style.background = 'white' }}
                   onBlur={e => { e.target.style.outline = 'none'; e.target.style.background = 'var(--color-card-light)' }}
                 />
-              </div>
               {errores.monto && <ErrorMsg mensaje={errores.monto} />}
             </Section>
 

@@ -354,6 +354,23 @@ export default function DashboardPage() {
             size={40}
             aria-label={`Avatar de ${sesion.nombre}`}
           />
+          {sesion.es_admin && (
+            <Link
+              href="/admin"
+              aria-label="Gestionar grupo"
+              style={{
+                background: 'var(--color-card)', border: 'none', borderRadius: 12,
+                width: 44, height: 44,
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                textDecoration: 'none', flexShrink: 0,
+              }}
+            >
+              <svg width="18" height="18" viewBox="0 0 18 18" fill="none" aria-hidden="true">
+                <path d="M9 11.5a2.5 2.5 0 100-5 2.5 2.5 0 000 5z" stroke="var(--color-text-secondary)" strokeWidth="1.6" strokeLinecap="round"/>
+                <path d="M14.5 9a5.5 5.5 0 01-.08.94l1.37 1.07-1 1.73-1.63-.55a5.5 5.5 0 01-1.62.94l-.24 1.69h-2l-.24-1.69a5.5 5.5 0 01-1.62-.94l-1.63.55-1-1.73 1.37-1.07A5.52 5.52 0 013.5 9c0-.32.03-.63.08-.94L2.21 6.99l1-1.73 1.63.55a5.5 5.5 0 011.62-.94L6.7 3.18h2l.24 1.69a5.5 5.5 0 011.62.94l1.63-.55 1 1.73-1.37 1.07c.05.31.08.62.08.94z" stroke="var(--color-text-secondary)" strokeWidth="1.6" strokeLinecap="round"/>
+              </svg>
+            </Link>
+          )}
           <button
             onClick={handleCerrarSesion}
             aria-label="Cerrar sesión"

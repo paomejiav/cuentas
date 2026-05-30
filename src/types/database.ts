@@ -26,6 +26,8 @@ export interface Integrante {
   nombre: string
   avatar_color: string
   activo: boolean
+  es_admin: boolean
+  pin_configurado: boolean
   creado_en: string
 }
 

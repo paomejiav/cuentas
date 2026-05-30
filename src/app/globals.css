@@ -1,26 +1,80 @@
-@import "tailwindcss";
+@import url('https://fonts.googleapis.com/css2?family=Lora:wght@700&family=DM+Sans:wght@400;500;600&display=swap');
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
 
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
-}
-
-@theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
-}
-
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+  --color-bg:             #F0EDE8;
+  --color-card:           #E8E4DE;
+  --color-card-light:     #F5F2EE;
+  --color-surface-white:  #FFFFFF;
+  --color-cta:            #00C851;
+  --color-cta-dark:       #009E40;
+  --color-text-primary:   #1C2B1A;
+  --color-text-secondary: #6B7468;
+  --color-text-disabled:  #B0ADA8;
+  --color-positive:       #009E40;
+  --color-negative:       #C0392B;
+  --color-neutral:        #8C8880;
+  --color-border:         #D8D4CE;
 }
 
 body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  background: var(--color-bg);
+  font-family: 'DM Sans', sans-serif;
+  color: var(--color-text-primary);
+  /* Evita doble-tap zoom en iOS */
+  touch-action: manipulation;
+}
+
+/* Shimmer para skeletons */
+@keyframes shimmer {
+  0%   { background-position: -400px 0; }
+  100% { background-position:  400px 0; }
+}
+
+.skeleton {
+  background: linear-gradient(
+    90deg,
+    var(--color-border) 25%,
+    var(--color-card-light) 50%,
+    var(--color-border) 75%
+  );
+  background-size: 800px 100%;
+  animation: shimmer 1.4s ease-in-out infinite;
+}
+
+/* Spinner de carga */
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+.spinner {
+  width: 18px;
+  height: 18px;
+  border: 2px solid rgba(255,255,255,0.35);
+  border-top-color: white;
+  border-radius: 50%;
+  animation: spin 0.7s linear infinite;
+  display: inline-block;
+  flex-shrink: 0;
+}
+
+/* Ocultar scrollbar de filtros horizontales */
+.scroll-x-hidden {
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+.scroll-x-hidden::-webkit-scrollbar {
+  display: none;
+}
+
+/* Fade-in stagger para listas */
+@keyframes fadeInUp {
+  from { opacity: 0; transform: translateY(8px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+.list-item-enter {
+  animation: fadeInUp 220ms ease both;
 }

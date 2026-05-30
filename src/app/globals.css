@@ -17,6 +17,14 @@
   --color-negative:       #C0392B;
   --color-neutral:        #8C8880;
   --color-border:         #D8D4CE;
+
+  --page-px: 20px;
+  --space-xs:  4px;
+  --space-sm:  8px;
+  --space-md:  16px;
+  --space-lg:  24px;
+  --space-xl:  40px;
+  --space-2xl: 56px;
 }
 
 body {

@@ -122,7 +122,7 @@ function Paso1({
   }
 
   return (
-    <div style={{ padding: '0 16px', display: 'flex', flexDirection: 'column', gap: 16 }}>
+    <div style={{ padding: '0 var(--page-px)', display: 'flex', flexDirection: 'column', gap: 16 }}>
       {/* Selector de mes */}
       <div>
         <SectionTitle>Mes a cerrar</SectionTitle>
@@ -287,7 +287,7 @@ function Paso2({
   ]
 
   return (
-    <div style={{ padding: '0 16px', display: 'flex', flexDirection: 'column', gap: 16 }}>
+    <div style={{ padding: '0 var(--page-px)', display: 'flex', flexDirection: 'column', gap: 16 }}>
       <SectionTitle>¿Cómo quieren saldar?</SectionTitle>
 
       {opciones.map(op => {
@@ -372,7 +372,7 @@ function Paso3({
   ]
 
   return (
-    <div style={{ padding: '0 16px', display: 'flex', flexDirection: 'column', gap: 16 }}>
+    <div style={{ padding: '0 var(--page-px)', display: 'flex', flexDirection: 'column', gap: 16 }}>
       {/* Progreso */}
       <Card style={{ padding: '14px 18px' }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
@@ -522,7 +522,7 @@ function Paso4({
   const pendientes = transferencias.filter(t => !t.pagado)
 
   return (
-    <div style={{ padding: '0 16px', display: 'flex', flexDirection: 'column', gap: 16 }}>
+    <div style={{ padding: '0 var(--page-px)', display: 'flex', flexDirection: 'column', gap: 16 }}>
       {/* Resumen visual */}
       <Card style={{ textAlign: 'center', padding: '24px 20px' }}>
         <div style={{ fontSize: 40, marginBottom: 8 }}>📅</div>
@@ -591,7 +591,7 @@ function CierresAnteriores({ cierres }: { cierres: CierreHistorial[] }) {
   if (cierres.length === 0) return null
 
   return (
-    <div style={{ padding: '0 16px', marginTop: 8 }}>
+    <div style={{ padding: '0 var(--page-px)', marginTop: 8 }}>
       <SectionTitle>Meses cerrados anteriores</SectionTitle>
       <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
         {cierres.map(c => {

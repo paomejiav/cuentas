@@ -170,7 +170,7 @@ function ResumenDeuda({ saldos }: { saldos: SaldoPar[] }) {
   return (
     <div style={{
       background: 'var(--color-card)', borderRadius: 20,
-      padding: '16px 20px', display: 'flex',
+      padding: '20px 24px', display: 'flex',
       justifyContent: 'space-around', marginBottom: 8,
       gap: 12,
     }}>
@@ -180,21 +180,22 @@ function ResumenDeuda({ saldos }: { saldos: SaldoPar[] }) {
             margin: 0, fontSize: 11, fontWeight: 600,
             color: 'var(--color-text-secondary)',
             fontFamily: 'var(--font-dm-sans), sans-serif',
-            textTransform: 'uppercase', letterSpacing: '0.06em',
+            textTransform: 'uppercase', letterSpacing: '0.08em',
           }}>
             Debes en total
           </p>
           <p style={{
-            margin: '4px 0 0', fontSize: 22, fontWeight: 700,
+            margin: '6px 0 0', fontSize: 28, fontWeight: 700,
             color: 'var(--color-negative)',
             fontFamily: 'var(--font-lora), serif',
+            lineHeight: 1,
           }}>
             {formatCLP(totalQueDebes)}
           </p>
         </div>
       )}
       {totalQueTeDeban > 0 && totalQueDebes > 0 && (
-        <div style={{ width: 1, background: 'var(--color-border)', flexShrink: 0 }} />
+        <div style={{ width: 1, background: 'var(--color-border)', flexShrink: 0, alignSelf: 'stretch' }} />
       )}
       {totalQueTeDeban > 0 && (
         <div style={{ textAlign: 'center', flex: 1 }}>
@@ -202,14 +203,15 @@ function ResumenDeuda({ saldos }: { saldos: SaldoPar[] }) {
             margin: 0, fontSize: 11, fontWeight: 600,
             color: 'var(--color-text-secondary)',
             fontFamily: 'var(--font-dm-sans), sans-serif',
-            textTransform: 'uppercase', letterSpacing: '0.06em',
+            textTransform: 'uppercase', letterSpacing: '0.08em',
           }}>
             Te deben en total
           </p>
           <p style={{
-            margin: '4px 0 0', fontSize: 22, fontWeight: 700,
+            margin: '6px 0 0', fontSize: 28, fontWeight: 700,
             color: 'var(--color-positive)',
             fontFamily: 'var(--font-lora), serif',
+            lineHeight: 1,
           }}>
             {formatCLP(totalQueTeDeban)}
           </p>
@@ -317,7 +319,7 @@ export default function DashboardPage() {
 
       {/* ── HEADER ── */}
       <header style={{
-        padding: '56px 20px 16px',
+        padding: '56px var(--page-px) 20px',
         display: 'flex', alignItems: 'center',
         justifyContent: 'space-between', gap: 12,
       }}>
@@ -368,7 +370,7 @@ export default function DashboardPage() {
       </header>
 
       {/* ── CONTENIDO ── */}
-      <main style={{ padding: '4px 16px 0' }}>
+      <main style={{ padding: '12px var(--page-px) 0' }}>
 
         {!cargando && tieneGastos && <ResumenDeuda saldos={saldos} />}
 
@@ -377,10 +379,10 @@ export default function DashboardPage() {
         {tieneGastos && (
           <>
             <p style={{
-              margin: '20px 4px 10px', fontSize: 12, fontWeight: 600,
+              margin: '28px 0 10px', fontSize: 11, fontWeight: 600,
               color: 'var(--color-text-secondary)',
               fontFamily: 'var(--font-dm-sans), sans-serif',
-              textTransform: 'uppercase', letterSpacing: '0.08em',
+              textTransform: 'uppercase', letterSpacing: '0.09em',
             }}>
               Con cada una
             </p>
@@ -388,7 +390,7 @@ export default function DashboardPage() {
             <div
               role="list"
               aria-label="Saldos con cada integrante"
-              style={{ display: 'flex', flexDirection: 'column', gap: 8 }}
+              style={{ display: 'flex', flexDirection: 'column', gap: 6 }}
             >
               {cargando
                 ? Array.from({ length: 4 }).map((_, i) => <SkeletonCard key={i} />)
@@ -406,10 +408,11 @@ export default function DashboardPage() {
 
             {!cargando && saldos.length > 0 && (
               <p style={{
-                margin: '20px 4px 0', fontSize: 12,
+                margin: '28px 0 0', fontSize: 12,
                 color: 'var(--color-text-disabled)',
                 fontFamily: 'var(--font-dm-sans), sans-serif',
                 textAlign: 'center',
+                lineHeight: 1.5,
               }}>
                 Solo gastos del período actual · Los meses cerrados no cuentan
               </p>

@@ -279,7 +279,7 @@ function HistorialInner() {
     <div style={{ minHeight: '100vh', background: 'var(--color-bg)', paddingBottom: 80 }}>
 
       {/* Header */}
-      <header style={{ padding: '56px 20px 16px', display: 'flex', alignItems: 'center', gap: 12 }}>
+      <header style={{ padding: '56px var(--page-px) 20px', display: 'flex', alignItems: 'center', gap: 12 }}>
         {esModo2 && (
           <button
             onClick={() => router.back()}
@@ -319,7 +319,7 @@ function HistorialInner() {
         )}
       </header>
 
-      <main style={{ padding: '0 16px' }}>
+      <main style={{ padding: '0 var(--page-px)' }}>
 
         {/* ── MODO 2: saldo neto destacado ── */}
         {esModo2 && !cargando && (

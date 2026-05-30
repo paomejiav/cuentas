@@ -62,22 +62,34 @@ export default function LoginPage() {
     e.preventDefault()
     setError(null)
     setLoading(true)
-    const result = await unirseAGrupo(codigo, nombreUnirse)
-    setLoading(false)
-    if (result.error) { setError(result.error); return }
-    setSesion(result.sesion)
-    router.replace('/dashboard')
+    try {
+      const result = await unirseAGrupo(codigo, nombreUnirse)
+      if (result.error) { setError(result.error); return }
+      setSesion(result.sesion)
+      router.replace('/dashboard')
+    } catch (err) {
+      setError('Error de conexión. Verificá tu internet e intentá de nuevo.')
+      console.error(err)
+    } finally {
+      setLoading(false)
+    }
   }
 
   async function handleCrear(e: React.FormEvent) {
     e.preventDefault()
     setError(null)
     setLoading(true)
-    const result = await crearGrupo(nombreGrupo, nombreCrear)
-    setLoading(false)
-    if (result.error) { setError(result.error); return }
-    setSesion(result.sesion)
-    router.replace('/dashboard')
+    try {
+      const result = await crearGrupo(nombreGrupo, nombreCrear)
+      if (result.error) { setError(result.error); return }
+      setSesion(result.sesion)
+      router.replace('/dashboard')
+    } catch (err) {
+      setError('Error de conexión. Verificá tu internet e intentá de nuevo.')
+      console.error(err)
+    } finally {
+      setLoading(false)
+    }
   }
 
   return (

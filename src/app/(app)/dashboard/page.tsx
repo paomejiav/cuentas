@@ -91,13 +91,13 @@ function SaldoCard({
     <button
       onClick={onClick}
       aria-label={`${integrante.nombre}: ${etiqueta}`}
-      className="list-item-enter"
+      className="list-item-enter saldo-card"
       style={{
         background: 'var(--color-card)', borderRadius: 20,
         padding: '14px 16px', border: 'none', width: '100%',
         display: 'flex', alignItems: 'center', gap: 14,
         cursor: 'pointer', textAlign: 'left',
-        transition: 'transform 120ms ease',
+        transition: 'transform 120ms ease, background 120ms ease',
         WebkitTapHighlightColor: 'transparent',
         animationDelay: `${animDelay}ms`,
       }}
@@ -127,8 +127,8 @@ function SaldoCard({
       </div>
 
       <svg width="16" height="16" viewBox="0 0 16 16" fill="none"
-        aria-hidden="true" style={{ flexShrink: 0 }}>
-        <path d="M6 4l4 4-4 4" stroke="var(--color-text-disabled)"
+        aria-hidden="true" style={{ flexShrink: 0, opacity: 0.5 }}>
+        <path d="M6 4l4 4-4 4" stroke="var(--color-text-primary)"
           strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
       </svg>
     </button>
@@ -316,10 +316,14 @@ export default function DashboardPage() {
 
   return (
     <div style={{ minHeight: '100vh', background: 'var(--color-bg)', paddingBottom: 80 }}>
+      <div style={{ maxWidth: 640, margin: '0 auto' }}>
 
       {/* ── HEADER ── */}
       <header style={{
-        padding: '56px var(--page-px) 20px',
+        paddingTop: 'max(56px, calc(env(safe-area-inset-top, 0px) + 16px))',
+        paddingBottom: 20,
+        paddingLeft: 'var(--page-px)',
+        paddingRight: 'var(--page-px)',
         display: 'flex', alignItems: 'center',
         justifyContent: 'space-between', gap: 12,
       }}>
@@ -420,6 +424,8 @@ export default function DashboardPage() {
           </>
         )}
       </main>
+
+      </div>{/* end max-width wrapper */}
 
       {/* ── BOTÓN FLOTANTE "+" ── */}
       <Link

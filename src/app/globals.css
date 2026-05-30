@@ -3,6 +3,14 @@
 @tailwind components;
 @tailwind utilities;
 
+*, *::before, *::after {
+  box-sizing: border-box;
+}
+
+html, body {
+  overflow-x: hidden;
+}
+
 :root {
   --color-bg:             #F0EDE8;
   --color-card:           #E8E4DE;
@@ -72,9 +80,28 @@ body {
 .scroll-x-hidden {
   overflow-x: auto;
   scrollbar-width: none;
+  -webkit-overflow-scrolling: touch;
 }
 .scroll-x-hidden::-webkit-scrollbar {
   display: none;
+}
+
+/* Hover en cards de saldo */
+.saldo-card:hover {
+  background: #DEDAD4 !important;
+}
+
+/* Grid de división — 2 cols en desktop */
+.division-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+@media (min-width: 768px) {
+  .division-list {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+  }
 }
 
 /* Fade-in stagger para listas */

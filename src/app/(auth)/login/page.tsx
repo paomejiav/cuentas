@@ -16,8 +16,9 @@ const inputStyle: React.CSSProperties = {
   width: '100%',
   padding: '0 16px',
   borderRadius: '14px',
-  fontSize: '15px',
+  fontSize: '16px',
   outline: 'none',
+  boxSizing: 'border-box',
 }
 
 function Field({
@@ -94,7 +95,7 @@ export default function LoginPage() {
 
   return (
     <main
-      className="min-h-screen flex flex-col items-center justify-center px-5"
+      className="min-h-[100dvh] flex flex-col items-center justify-center px-5"
       style={{ background: 'var(--color-bg)' }}
     >
       {/* Header */}
@@ -114,7 +115,7 @@ export default function LoginPage() {
         </p>
       </div>
 
-      <div className="w-full max-w-sm">
+      <div style={{ width: '100%', maxWidth: 440 }}>
 
         {/* ─── ELEGIR MODO ─── */}
         {modo === 'elegir' && (
@@ -122,14 +123,14 @@ export default function LoginPage() {
             <button
               onClick={() => setModo('unirse')}
               className="w-full h-14 rounded-[100px] text-base font-semibold transition-transform active:scale-[0.97]"
-              style={{ background: 'var(--color-cta)', color: 'white', fontFamily: 'var(--font-dm-sans), sans-serif' }}
+              style={{ background: 'var(--color-cta)', color: 'white', border: 'none', outline: 'none', fontFamily: 'var(--font-dm-sans), sans-serif' }}
             >
               Unirme a un grupo 🙋‍♀️
             </button>
             <button
               onClick={() => setModo('crear')}
               className="w-full h-14 rounded-[100px] text-base font-medium transition-transform active:scale-[0.97]"
-              style={{ background: 'var(--color-card)', color: 'var(--color-text-primary)', fontFamily: 'var(--font-dm-sans), sans-serif' }}
+              style={{ background: 'var(--color-card)', color: 'var(--color-text-primary)', border: '1.5px solid var(--color-border)', outline: 'none', fontFamily: 'var(--font-dm-sans), sans-serif' }}
             >
               Crear un grupo nuevo ✨
             </button>

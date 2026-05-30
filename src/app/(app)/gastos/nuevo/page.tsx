@@ -217,9 +217,13 @@ export default function NuevoGastoPage() {
   return (
     <div style={{ minHeight: '100vh', background: 'var(--color-bg)', paddingBottom: 40 }}>
 
+      <div style={{ maxWidth: 640, margin: '0 auto' }}>
       {/* Header */}
       <header style={{
-        padding: '56px 20px 20px',
+        paddingTop: 'max(56px, calc(env(safe-area-inset-top, 0px) + 16px))',
+        paddingBottom: 20,
+        paddingLeft: 'var(--page-px)',
+        paddingRight: 'var(--page-px)',
         display: 'flex',
         alignItems: 'center',
         gap: 12,
@@ -281,7 +285,7 @@ export default function NuevoGastoPage() {
         </div>
       </header>
 
-      <main style={{ padding: '0 16px' }}>
+      <main style={{ padding: '0 var(--page-px)' }}>
 
         {/* ════════════════════════════════════════ PASO 1 */}
         {paso === 1 && (
@@ -341,7 +345,7 @@ export default function NuevoGastoPage() {
               {cargandoIntegrantes ? (
                 <div style={{ height: 52, background: 'var(--color-card)', borderRadius: 14 }} />
               ) : (
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
                   {integrantes.map(i => {
                     const activo = pagadoPor === i.id
                     return (
@@ -351,9 +355,10 @@ export default function NuevoGastoPage() {
                         style={{
                           display: 'flex',
                           alignItems: 'center',
-                          gap: 12,
-                          padding: '10px 14px',
-                          borderRadius: 14,
+                          gap: 8,
+                          height: 40,
+                          padding: '0 12px 0 8px',
+                          borderRadius: 20,
                           border: activo ? '2px solid var(--color-cta)' : '2px solid transparent',
                           background: activo ? 'white' : 'var(--color-card-light)',
                           cursor: 'pointer',
@@ -361,19 +366,17 @@ export default function NuevoGastoPage() {
                           WebkitTapHighlightColor: 'transparent',
                         }}
                       >
-                        <Avatar nombre={i.nombre} color={i.avatar_color} size={36} />
+                        <Avatar nombre={i.nombre} color={i.avatar_color} size={28} />
                         <span style={{
-                          fontSize: 15,
+                          fontSize: 14,
                           fontWeight: activo ? 600 : 400,
                           color: 'var(--color-text-primary)',
                           fontFamily: 'var(--font-dm-sans), sans-serif',
+                          whiteSpace: 'nowrap',
                         }}>
-                          {i.nombre}
-                          {i.id === sesion.integrante_id ? ' (tú)' : ''}
+                          {i.nombre}{i.id === sesion.integrante_id ? ' (tú)' : ''}
                         </span>
-                        {activo && (
-                          <span style={{ marginLeft: 'auto', fontSize: 16 }}>✓</span>
-                        )}
+                        {activo && <span style={{ fontSize: 14, marginLeft: 2 }}>✓</span>}
                       </button>
                     )
                   })}
@@ -385,7 +388,7 @@ export default function NuevoGastoPage() {
             {/* Categoría */}
             <Section>
               <Label>Categoría</Label>
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 8 }}>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 8 }}>
                 {CATEGORIAS.map(c => {
                   const activo = categoria === c.id
                   return (
@@ -606,7 +609,7 @@ export default function NuevoGastoPage() {
                 )}
               </div>
 
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+              <div className="division-list">
                 {participantes.map(id => {
                   const integrante = integrantes.find(i => i.id === id)
                   if (!integrante) return null
@@ -726,6 +729,8 @@ export default function NuevoGastoPage() {
           </>
         )}
       </main>
+
+      </div>{/* end max-width wrapper */}
 
       {/* Toast */}
       {toast && (

@@ -7,9 +7,11 @@ export interface SesionData {
   nombre: string
   grupo_nombre: string
   avatar_color: string
+  es_admin: boolean
 }
 
 const SESSION_KEY = 'cuentas_sesion'
+const MAX_AGE = 60 * 60 * 24 * 30
 
 // ============================================================
 // Persistencia local
@@ -18,8 +20,12 @@ const SESSION_KEY = 'cuentas_sesion'
 export function guardarSesionLocal(sesion: SesionData): void {
   if (typeof window === 'undefined') return
   localStorage.setItem(SESSION_KEY, JSON.stringify(sesion))
-  // Cookie liviana para que el middleware pueda verificar sesión
-  document.cookie = `cuentas_sesion=1; path=/; max-age=${60 * 60 * 24 * 30}; SameSite=Lax`
+  document.cookie = `cuentas_sesion=1; path=/; max-age=${MAX_AGE}; SameSite=Lax`
+  if (sesion.es_admin) {
+    document.cookie = `cuentas_admin=1; path=/; max-age=${MAX_AGE}; SameSite=Lax`
+  } else {
+    document.cookie = 'cuentas_admin=; path=/; max-age=0'
+  }
 }
 
 export function leerSesionLocal(): SesionData | null {
@@ -36,24 +42,20 @@ export function borrarSesionLocal(): void {
   if (typeof window === 'undefined') return
   localStorage.removeItem(SESSION_KEY)
   document.cookie = 'cuentas_sesion=; path=/; max-age=0'
+  document.cookie = 'cuentas_admin=; path=/; max-age=0'
 }
 
 // ============================================================
-// Unirse a un grupo existente por código
+// PASO 1 — Verificar código y obtener integrantes del grupo
 // ============================================================
 
-export async function unirseAGrupo(
-  codigoAcceso: string,
-  nombre: string
-): Promise<{ sesion: SesionData; error: null } | { sesion: null; error: string }> {
+export async function verificarCodigo(codigoAcceso: string): Promise<
+  | { grupo: Grupo; integrantes: Integrante[]; error: null }
+  | { grupo: null; integrantes: null; error: string }
+> {
   const codigo = codigoAcceso.trim().toUpperCase()
-  const nombreLimpio = nombre.trim()
+  if (!codigo) return { grupo: null, integrantes: null, error: 'Ingresa el código del grupo.' }
 
-  if (!codigo || !nombreLimpio) {
-    return { sesion: null, error: 'Completa todos los campos.' }
-  }
-
-  // Buscar el grupo
   const { data: grupoData, error: grupoError } = await supabase
     .from('grupos')
     .select('*')
@@ -61,66 +63,44 @@ export async function unirseAGrupo(
     .single()
 
   if (grupoError || !grupoData) {
-    return { sesion: null, error: 'Código de grupo incorrecto. Revisá el código e intentá de nuevo.' }
+    return { grupo: null, integrantes: null, error: 'Código incorrecto, revísalo.' }
   }
 
-  const grupo = grupoData as import('@/types/database').Grupo
+  const grupo = grupoData as Grupo
 
-  // Verificar si ya existe una integrante con ese nombre en el grupo
-  const { data: existente } = await supabase
+  const { data: integrantesData } = await supabase
     .from('integrantes')
     .select('*')
     .eq('grupo_id', grupo.id)
-    .ilike('nombre', nombreLimpio)
     .eq('activo', true)
-    .maybeSingle()
+    .order('nombre')
 
-  let integrante: Integrante
-
-  if (existente) {
-    // Reusar integrante existente (login)
-    integrante = existente
-  } else {
-    // Crear nueva integrante
-    const colores = [
-      '#F4A79D', '#A8D8B9', '#A8C8E8', '#D4A8D8',
-      '#F4D4A0', '#A8D4D4', '#D4C4A8', '#C4D4A8',
-    ]
-    const { data: integrantesActuales } = await supabase
-      .from('integrantes')
-      .select('id')
-      .eq('grupo_id', grupo.id)
-
-    const colorIdx = (integrantesActuales?.length ?? 0) % colores.length
-    const avatarColor = colores[colorIdx]
-
-    const { data: nueva, error: crearError } = await supabase
-      .from('integrantes')
-      .insert({ grupo_id: grupo.id, nombre: nombreLimpio, avatar_color: avatarColor })
-      .select()
-      .single()
-
-    if (crearError || !nueva) {
-      return { sesion: null, error: 'No se pudo registrar. Intentá de nuevo.' }
-    }
-
-    integrante = nueva
+  return {
+    grupo,
+    integrantes: (integrantesData ?? []) as Integrante[],
+    error: null,
   }
+}
 
+// ============================================================
+// PASO 2 — Seleccionar integrante y crear sesión
+// ============================================================
+
+export function seleccionarIntegrante(grupo: Grupo, integrante: Integrante): SesionData {
   const sesion: SesionData = {
-    grupo_id:     grupo.id,
+    grupo_id:      grupo.id,
     integrante_id: integrante.id,
     nombre:        integrante.nombre,
     grupo_nombre:  grupo.nombre,
     avatar_color:  integrante.avatar_color,
+    es_admin:      integrante.es_admin ?? false,
   }
-
   guardarSesionLocal(sesion)
-  return { sesion, error: null }
+  return sesion
 }
 
 // ============================================================
-// Crear un grupo nuevo
+// Crear un grupo nuevo (flujo de creación, no de login)
 // ============================================================
 
 export async function crearGrupo(
@@ -134,7 +114,6 @@ export async function crearGrupo(
     return { sesion: null, error: 'Completa todos los campos.' }
   }
 
-  // Generar código único de 6 caracteres
   const codigo = await generarCodigoUnico()
 
   const { data: grupo, error: grupoError } = await supabase
@@ -149,7 +128,7 @@ export async function crearGrupo(
 
   const { data: integrante, error: intError } = await supabase
     .from('integrantes')
-    .insert({ grupo_id: grupo.id, nombre, avatar_color: '#F4A79D' })
+    .insert({ grupo_id: grupo.id, nombre, avatar_color: '#F4A79D', es_admin: true })
     .select()
     .single()
 
@@ -157,20 +136,12 @@ export async function crearGrupo(
     return { sesion: null, error: 'No se pudo crear tu perfil. Intentá de nuevo.' }
   }
 
-  const sesion: SesionData = {
-    grupo_id:     grupo.id,
-    integrante_id: integrante.id,
-    nombre:        integrante.nombre,
-    grupo_nombre:  grupo.nombre,
-    avatar_color:  integrante.avatar_color,
-  }
-
-  guardarSesionLocal(sesion)
+  const sesion = seleccionarIntegrante(grupo as Grupo, integrante as Integrante)
   return { sesion, error: null }
 }
 
 // ============================================================
-// Obtener sesión activa (verifica que el integrante siga existiendo)
+// Verificar sesión activa
 // ============================================================
 
 export async function obtenerSesion(): Promise<SesionData | null> {
@@ -222,6 +193,5 @@ async function generarCodigoUnico(): Promise<string> {
     intentos++
   }
 
-  // Fallback con timestamp
   return Date.now().toString(36).toUpperCase().slice(-6)
 }

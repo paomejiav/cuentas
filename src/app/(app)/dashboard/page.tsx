@@ -91,13 +91,13 @@ function SaldoCard({
     <button
       onClick={onClick}
       aria-label={`${integrante.nombre}: ${etiqueta}`}
-      className="list-item-enter"
+      className="list-item-enter saldo-card"
       style={{
         background: 'var(--color-card)', borderRadius: 20,
         padding: '14px 16px', border: 'none', width: '100%',
         display: 'flex', alignItems: 'center', gap: 14,
         cursor: 'pointer', textAlign: 'left',
-        transition: 'transform 120ms ease',
+        transition: 'transform 120ms ease, background 120ms ease',
         WebkitTapHighlightColor: 'transparent',
         animationDelay: `${animDelay}ms`,
       }}
@@ -127,8 +127,8 @@ function SaldoCard({
       </div>
 
       <svg width="16" height="16" viewBox="0 0 16 16" fill="none"
-        aria-hidden="true" style={{ flexShrink: 0 }}>
-        <path d="M6 4l4 4-4 4" stroke="var(--color-text-disabled)"
+        aria-hidden="true" style={{ flexShrink: 0, opacity: 0.5 }}>
+        <path d="M6 4l4 4-4 4" stroke="var(--color-text-primary)"
           strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
       </svg>
     </button>
@@ -170,7 +170,7 @@ function ResumenDeuda({ saldos }: { saldos: SaldoPar[] }) {
   return (
     <div style={{
       background: 'var(--color-card)', borderRadius: 20,
-      padding: '16px 20px', display: 'flex',
+      padding: '20px 24px', display: 'flex',
       justifyContent: 'space-around', marginBottom: 8,
       gap: 12,
     }}>
@@ -180,21 +180,22 @@ function ResumenDeuda({ saldos }: { saldos: SaldoPar[] }) {
             margin: 0, fontSize: 11, fontWeight: 600,
             color: 'var(--color-text-secondary)',
             fontFamily: 'var(--font-dm-sans), sans-serif',
-            textTransform: 'uppercase', letterSpacing: '0.06em',
+            textTransform: 'uppercase', letterSpacing: '0.08em',
           }}>
             Debes en total
           </p>
           <p style={{
-            margin: '4px 0 0', fontSize: 22, fontWeight: 700,
+            margin: '6px 0 0', fontSize: 28, fontWeight: 700,
             color: 'var(--color-negative)',
             fontFamily: 'var(--font-lora), serif',
+            lineHeight: 1,
           }}>
             {formatCLP(totalQueDebes)}
           </p>
         </div>
       )}
       {totalQueTeDeban > 0 && totalQueDebes > 0 && (
-        <div style={{ width: 1, background: 'var(--color-border)', flexShrink: 0 }} />
+        <div style={{ width: 1, background: 'var(--color-border)', flexShrink: 0, alignSelf: 'stretch' }} />
       )}
       {totalQueTeDeban > 0 && (
         <div style={{ textAlign: 'center', flex: 1 }}>
@@ -202,14 +203,15 @@ function ResumenDeuda({ saldos }: { saldos: SaldoPar[] }) {
             margin: 0, fontSize: 11, fontWeight: 600,
             color: 'var(--color-text-secondary)',
             fontFamily: 'var(--font-dm-sans), sans-serif',
-            textTransform: 'uppercase', letterSpacing: '0.06em',
+            textTransform: 'uppercase', letterSpacing: '0.08em',
           }}>
             Te deben en total
           </p>
           <p style={{
-            margin: '4px 0 0', fontSize: 22, fontWeight: 700,
+            margin: '6px 0 0', fontSize: 28, fontWeight: 700,
             color: 'var(--color-positive)',
             fontFamily: 'var(--font-lora), serif',
+            lineHeight: 1,
           }}>
             {formatCLP(totalQueTeDeban)}
           </p>
@@ -314,10 +316,14 @@ export default function DashboardPage() {
 
   return (
     <div style={{ minHeight: '100vh', background: 'var(--color-bg)', paddingBottom: 80 }}>
+      <div style={{ maxWidth: 640, margin: '0 auto' }}>
 
       {/* ── HEADER ── */}
       <header style={{
-        padding: '56px 20px 16px',
+        paddingTop: 'max(56px, calc(env(safe-area-inset-top, 0px) + 16px))',
+        paddingBottom: 20,
+        paddingLeft: 'var(--page-px)',
+        paddingRight: 'var(--page-px)',
         display: 'flex', alignItems: 'center',
         justifyContent: 'space-between', gap: 12,
       }}>
@@ -348,6 +354,23 @@ export default function DashboardPage() {
             size={40}
             aria-label={`Avatar de ${sesion.nombre}`}
           />
+          {sesion.es_admin && (
+            <Link
+              href="/admin"
+              aria-label="Gestionar grupo"
+              style={{
+                background: 'var(--color-card)', border: 'none', borderRadius: 12,
+                width: 44, height: 44,
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                textDecoration: 'none', flexShrink: 0,
+              }}
+            >
+              <svg width="18" height="18" viewBox="0 0 18 18" fill="none" aria-hidden="true">
+                <path d="M9 11.5a2.5 2.5 0 100-5 2.5 2.5 0 000 5z" stroke="var(--color-text-secondary)" strokeWidth="1.6" strokeLinecap="round"/>
+                <path d="M14.5 9a5.5 5.5 0 01-.08.94l1.37 1.07-1 1.73-1.63-.55a5.5 5.5 0 01-1.62.94l-.24 1.69h-2l-.24-1.69a5.5 5.5 0 01-1.62-.94l-1.63.55-1-1.73 1.37-1.07A5.52 5.52 0 013.5 9c0-.32.03-.63.08-.94L2.21 6.99l1-1.73 1.63.55a5.5 5.5 0 011.62-.94L6.7 3.18h2l.24 1.69a5.5 5.5 0 011.62.94l1.63-.55 1 1.73-1.37 1.07c.05.31.08.62.08.94z" stroke="var(--color-text-secondary)" strokeWidth="1.6" strokeLinecap="round"/>
+              </svg>
+            </Link>
+          )}
           <button
             onClick={handleCerrarSesion}
             aria-label="Cerrar sesión"
@@ -368,7 +391,7 @@ export default function DashboardPage() {
       </header>
 
       {/* ── CONTENIDO ── */}
-      <main style={{ padding: '4px 16px 0' }}>
+      <main style={{ padding: '12px var(--page-px) 0' }}>
 
         {!cargando && tieneGastos && <ResumenDeuda saldos={saldos} />}
 
@@ -377,10 +400,10 @@ export default function DashboardPage() {
         {tieneGastos && (
           <>
             <p style={{
-              margin: '20px 4px 10px', fontSize: 12, fontWeight: 600,
+              margin: '28px 0 10px', fontSize: 11, fontWeight: 600,
               color: 'var(--color-text-secondary)',
               fontFamily: 'var(--font-dm-sans), sans-serif',
-              textTransform: 'uppercase', letterSpacing: '0.08em',
+              textTransform: 'uppercase', letterSpacing: '0.09em',
             }}>
               Con cada una
             </p>
@@ -388,7 +411,7 @@ export default function DashboardPage() {
             <div
               role="list"
               aria-label="Saldos con cada integrante"
-              style={{ display: 'flex', flexDirection: 'column', gap: 8 }}
+              style={{ display: 'flex', flexDirection: 'column', gap: 6 }}
             >
               {cargando
                 ? Array.from({ length: 4 }).map((_, i) => <SkeletonCard key={i} />)
@@ -406,10 +429,11 @@ export default function DashboardPage() {
 
             {!cargando && saldos.length > 0 && (
               <p style={{
-                margin: '20px 4px 0', fontSize: 12,
+                margin: '28px 0 0', fontSize: 12,
                 color: 'var(--color-text-disabled)',
                 fontFamily: 'var(--font-dm-sans), sans-serif',
                 textAlign: 'center',
+                lineHeight: 1.5,
               }}>
                 Solo gastos del período actual · Los meses cerrados no cuentan
               </p>
@@ -417,6 +441,8 @@ export default function DashboardPage() {
           </>
         )}
       </main>
+
+      </div>{/* end max-width wrapper */}
 
       {/* ── BOTÓN FLOTANTE "+" ── */}
       <Link

@@ -83,14 +83,19 @@ export function BottomNav() {
         right: 0,
         height: 60,
         background: 'var(--color-bg)',
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'space-around',
         borderTop: '1px solid var(--color-border)',
         zIndex: 40,
         paddingBottom: 'env(safe-area-inset-bottom)',
       }}
     >
+      <div style={{
+        maxWidth: 640,
+        margin: '0 auto',
+        height: '100%',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'space-around',
+      }}>
       {tabs.map(tab => {
         const active = pathname === tab.href || pathname.startsWith(tab.href + '/')
         return (
@@ -123,6 +128,7 @@ export function BottomNav() {
           </Link>
         )
       })}
+      </div>
     </nav>
   )
 }

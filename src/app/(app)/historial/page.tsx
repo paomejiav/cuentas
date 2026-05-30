@@ -73,11 +73,11 @@ function GastoItem({
     >
       {/* Emoji categoría */}
       <div style={{
-        width: 44, height: 44,
-        borderRadius: 12,
+        width: 36, height: 36,
+        borderRadius: 8,
         background: 'var(--color-card-light)',
         display: 'flex', alignItems: 'center', justifyContent: 'center',
-        fontSize: 22, flexShrink: 0,
+        fontSize: 18, flexShrink: 0,
       }}>
         {CATEGORIA_EMOJI[gasto.categoria] ?? '📦'}
       </div>
@@ -277,9 +277,10 @@ function HistorialInner() {
 
   return (
     <div style={{ minHeight: '100vh', background: 'var(--color-bg)', paddingBottom: 80 }}>
+      <div style={{ maxWidth: 640, margin: '0 auto' }}>
 
       {/* Header */}
-      <header style={{ padding: '56px 20px 16px', display: 'flex', alignItems: 'center', gap: 12 }}>
+      <header style={{ padding: '56px var(--page-px) 20px', display: 'flex', alignItems: 'center', gap: 12 }}>
         {esModo2 && (
           <button
             onClick={() => router.back()}
@@ -319,7 +320,7 @@ function HistorialInner() {
         )}
       </header>
 
-      <main style={{ padding: '0 16px' }}>
+      <main style={{ padding: '0 var(--page-px)' }}>
 
         {/* ── MODO 2: saldo neto destacado ── */}
         {esModo2 && !cargando && (
@@ -361,7 +362,7 @@ function HistorialInner() {
             {meses.length > 0 && (
               <div style={{
                 display: 'flex', gap: 8, overflowX: 'auto', paddingBottom: 8,
-                scrollbarWidth: 'none', marginBottom: 8,
+                scrollbarWidth: 'none', WebkitOverflowScrolling: 'touch' as const, marginBottom: 8,
               }}>
                 <Chip activo={!mesFiltro} onClick={() => setMesFiltro('')}>Todos</Chip>
                 {meses.slice(0, 6).map(m => (
@@ -393,7 +394,7 @@ function HistorialInner() {
             {integrantes.length > 0 && (
               <div style={{
                 display: 'flex', gap: 8, overflowX: 'auto', paddingBottom: 4,
-                scrollbarWidth: 'none',
+                scrollbarWidth: 'none', WebkitOverflowScrolling: 'touch' as const,
               }}>
                 <Chip activo={!personaFiltro} onClick={() => setPersonaFiltro('')}>Todas</Chip>
                 {integrantes.map(i => (
@@ -509,6 +510,8 @@ function HistorialInner() {
           <path d="M12 5v14M5 12h14" stroke="white" strokeWidth="2.2" strokeLinecap="round" />
         </svg>
       </Link>
+
+      </div>{/* end max-width wrapper */}
 
       <BottomNav />
 

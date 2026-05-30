@@ -139,7 +139,7 @@ export default function LoginPage() {
       <div style={{ marginBottom: 40, textAlign: 'center' }}>
         <div style={{ fontSize: 48, marginBottom: 12 }}>🧾</div>
         <h1 style={{ margin: 0, fontSize: 32, fontWeight: 700, fontFamily: 'var(--font-lora), serif', color: '#1C2B1A' }}>
-          Cuentas
+          Better than Split
         </h1>
         <p style={{ margin: '6px 0 0', fontSize: 14, color: '#6B7468', fontFamily: F }}>
           Gastos compartidos sin drama

@@ -18,7 +18,7 @@ const dmSans = DM_Sans({
 })
 
 export const metadata: Metadata = {
-  title: 'Cuentas',
+  title: 'Better than Split',
   description: 'Gastos compartidos para amigas',
 }
 

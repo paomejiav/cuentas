@@ -60,7 +60,7 @@ export interface Pago {
   monto: number
   fecha: string
   metodo: MetodoPago
-  mes_cierre: string        // 'YYYY-MM'
+  mes_cierre: string | null // 'YYYY-MM' · null = pago anticipado sin cerrar
   creado_en: string
 }
 

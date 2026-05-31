@@ -14,6 +14,8 @@ import { Avatar } from '@/components/app/Avatar'
 import { BottomNav } from '@/components/app/BottomNav'
 import { Toast } from '@/components/app/Toast'
 import { CATEGORIA_EMOJI, CATEGORIA_LABEL, type Categoria } from '@/types/database'
+import { METODO_LABEL } from '@/lib/pagos'
+import { formatearFechaCorta } from '@/lib/historial'
 import { supabase } from '@/lib/supabase'
 
 type Paso = 1 | 2 | 3 | 4
@@ -242,6 +244,45 @@ function Paso1({
               ))}
             </div>
           </Card>
+        </div>
+      )}
+
+      {/* Pagos anticipados del período */}
+      {resumen && resumen.pagosAnticipados.length > 0 && (
+        <div>
+          <SectionTitle>Pagos anticipados del período</SectionTitle>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+            {resumen.pagosAnticipados.map(p => (
+              <div key={p.id} style={{
+                background: '#F0FAF4',
+                borderRadius: 16, padding: '12px 16px',
+                display: 'flex', alignItems: 'center', gap: 12,
+              }}>
+                <div style={{
+                  width: 32, height: 32, borderRadius: 8,
+                  background: '#D4F0E0',
+                  display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  fontSize: 16, flexShrink: 0,
+                }}>
+                  💸
+                </div>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <p style={{ margin: 0, fontSize: 13, fontWeight: 600, color: 'var(--color-text-primary)', fontFamily: 'var(--font-dm-sans), sans-serif' }}>
+                    {p.de.nombre} → {p.a.nombre}
+                  </p>
+                  <p style={{ margin: '2px 0 0', fontSize: 12, color: 'var(--color-text-secondary)', fontFamily: 'var(--font-dm-sans), sans-serif' }}>
+                    {METODO_LABEL[p.metodo]} · {formatearFechaCorta(p.fecha)}
+                  </p>
+                </div>
+                <p style={{ margin: 0, fontSize: 14, fontWeight: 700, color: 'var(--color-positive)', fontFamily: 'var(--font-dm-sans), sans-serif', flexShrink: 0 }}>
+                  {formatCLP(p.monto)}
+                </p>
+              </div>
+            ))}
+          </div>
+          <p style={{ margin: '8px 4px 0', fontSize: 12, color: 'var(--color-text-secondary)', fontFamily: 'var(--font-dm-sans), sans-serif' }}>
+            Estos pagos ya están descontados del balance de arriba.
+          </p>
         </div>
       )}
 

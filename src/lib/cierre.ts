@@ -1,5 +1,6 @@
 import { supabase } from '@/lib/supabase'
 import type { Categoria, MetodoPago } from '@/types/database'
+import { obtenerPagosDeMes, type PagoAnticipado } from '@/lib/pagos'
 
 // ── Tipos ─────────────────────────────────────────────────────
 
@@ -29,6 +30,7 @@ export interface ResumenMes {
   porCategoria: DesgloseCat[]
   gastoIds: string[]      // ids de los gastos a cerrar
   yaCerrado: boolean
+  pagosAnticipados: PagoAnticipado[]
 }
 
 export interface TransferenciaCierre {
@@ -171,6 +173,8 @@ export async function calcularResumenMes(
 
   const gastoIds = (gastos ?? []).map(g => g.id)
 
+  const pagosAnticipados = await obtenerPagosDeMes(grupoId, mes)
+
   return {
     mes,
     totalGastado: Math.round(totalGastado),
@@ -178,6 +182,7 @@ export async function calcularResumenMes(
     porCategoria,
     gastoIds,
     yaCerrado: Boolean(cierre),
+    pagosAnticipados,
   }
 }
 

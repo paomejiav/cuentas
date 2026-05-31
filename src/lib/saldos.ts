@@ -74,6 +74,27 @@ export async function calcularSaldos(
     }
   }
 
+  // 3b. Restar pagos anticipados ya realizados (mes_cierre null)
+  const { data: pagos } = await supabase
+    .from('pagos')
+    .select('de_integrante_id, a_integrante_id, monto')
+    .eq('grupo_id', grupoId)
+    .is('mes_cierre', null)
+
+  for (const p of pagos ?? []) {
+    const de    = p.de_integrante_id as string
+    const a     = p.a_integrante_id  as string
+    const monto = Number(p.monto)
+
+    if (de === miId && a in saldoMap) {
+      // Yo le pagué a otro → mi deuda se reduce (saldo negativo se acerca a 0)
+      saldoMap[a] += monto
+    } else if (a === miId && de in saldoMap) {
+      // Otro me pagó a mí → su deuda se reduce (saldo positivo se acerca a 0)
+      saldoMap[de] -= monto
+    }
+  }
+
   // 4. Armar resultado ordenado: deudas primero, luego créditos, luego al día
   return integrantes
     .map(integrante => ({

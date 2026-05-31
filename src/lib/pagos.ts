@@ -103,13 +103,18 @@ export interface NuevoPago {
 export async function registrarPago(
   pago: NuevoPago
 ): Promise<{ ok: true; id: string } | { ok: false; error: string }> {
+  const payload = { ...pago, mes_cierre: null }
+  console.log('[registrarPago] payload:', JSON.stringify(payload, null, 2))
   const { data, error } = await supabase
     .from('pagos')
-    .insert({ ...pago, mes_cierre: null })
+    .insert(payload)
     .select('id')
     .single()
 
-  if (error || !data) return { ok: false, error: 'No se pudo registrar el pago.' }
+  if (error || !data) {
+    console.error('[registrarPago] error Supabase:', JSON.stringify(error, null, 2))
+    return { ok: false, error: 'No se pudo registrar el pago.' }
+  }
   return { ok: true, id: data.id }
 }
 

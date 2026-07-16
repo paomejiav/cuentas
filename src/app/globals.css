@@ -104,6 +104,32 @@ body {
   }
 }
 
+/* Cuenta compartida — layout de foto de boleta + formulario de items */
+.cc-items-layout {
+  display: flex;
+  flex-direction: column;
+}
+.cc-items-foto {
+  margin-bottom: 20px;
+}
+@media (min-width: 768px) {
+  .cc-items-layout {
+    flex-direction: row-reverse;
+    align-items: flex-start;
+    gap: 24px;
+  }
+  .cc-items-form {
+    flex: 1;
+    min-width: 0;
+  }
+  .cc-items-foto {
+    flex: 0 0 340px;
+    position: sticky;
+    top: 20px;
+    margin-bottom: 0;
+  }
+}
+
 /* Fade-in stagger para listas */
 @keyframes fadeInUp {
   from { opacity: 0; transform: translateY(8px); }

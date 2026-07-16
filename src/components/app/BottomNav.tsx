@@ -69,6 +69,26 @@ const tabs = [
       </svg>
     ),
   },
+  {
+    href: '/cuentas-compartidas',
+    label: 'Compartidas',
+    icon: (active: boolean) => (
+      <svg width="24" height="24" viewBox="0 0 24 24" fill="none">
+        <path
+          d="M6 3h9l3 3v15a1 1 0 01-1 1H6a1 1 0 01-1-1V4a1 1 0 011-1z"
+          stroke={active ? 'var(--color-text-primary)' : 'var(--color-text-secondary)'}
+          strokeWidth={active ? 2 : 1.5}
+          strokeLinejoin="round"
+        />
+        <path
+          d="M8.5 9h7M8.5 13h7M8.5 17h4"
+          stroke={active ? 'var(--color-text-primary)' : 'var(--color-text-secondary)'}
+          strokeWidth={active ? 2 : 1.5}
+          strokeLinecap="round"
+        />
+      </svg>
+    ),
+  },
 ]
 
 export function BottomNav() {

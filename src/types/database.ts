@@ -72,6 +72,46 @@ export interface CiorreMensual {
   cerrado_en: string
 }
 
+export type EstadoCuentaCompartida = 'abierta' | 'cerrada'
+
+export interface CuentaCompartida {
+  id: string
+  grupo_id: string
+  nombre: string
+  fecha: string              // ISO date 'YYYY-MM-DD'
+  pagado_por: string         // integrante_id
+  estado: EstadoCuentaCompartida
+  foto_boleta_url: string | null
+  monto_propina: number | null
+  creado_por: string         // integrante_id
+  creado_en: string
+}
+
+export interface CuentaCompartidaParticipante {
+  id: string
+  cuenta_compartida_id: string
+  integrante_id: string
+  es_exento: boolean
+}
+
+export interface CuentaCompartidaItem {
+  id: string
+  cuenta_compartida_id: string
+  descripcion: string
+  precio_unitario: number
+  cantidad: number
+  total: number
+  creado_en: string
+}
+
+export interface CuentaCompartidaConsumo {
+  id: string
+  item_id: string
+  integrante_id: string
+  cantidad_asignada: number
+  actualizado_en: string
+}
+
 // ============================================================
 // Tipos enriquecidos (con joins para queries frecuentes)
 // ============================================================
@@ -84,6 +124,11 @@ export interface GastoConDetalle extends Gasto {
 export interface PagoConIntegrantes extends Pago {
   de: Integrante
   a: Integrante
+}
+
+export interface CuentaCompartidaConDetalle extends CuentaCompartida {
+  pagador: Integrante
+  participantes: (CuentaCompartidaParticipante & { integrante: Integrante })[]
 }
 
 // ============================================================
@@ -128,6 +173,14 @@ export interface FormPago {
   monto: number
   metodo: MetodoPago
   mes_cierre: string
+}
+
+export interface FormCuentaCompartida {
+  nombre: string
+  fecha: string
+  participantes: string[]
+  pagado_por: string
+  foto: File | null
 }
 
 // ============================================================
@@ -201,6 +254,26 @@ export interface Database {
         Row:    CiorreMensual
         Insert: Omit<CiorreMensual, 'id' | 'cerrado_en'>
         Update: Partial<Omit<CiorreMensual, 'id' | 'cerrado_en'>>
+      }
+      cuentas_compartidas: {
+        Row:    CuentaCompartida
+        Insert: Omit<CuentaCompartida, 'id' | 'creado_en'>
+        Update: Partial<Omit<CuentaCompartida, 'id' | 'creado_en'>>
+      }
+      cuentas_compartidas_participantes: {
+        Row:    CuentaCompartidaParticipante
+        Insert: Omit<CuentaCompartidaParticipante, 'id'>
+        Update: Partial<Omit<CuentaCompartidaParticipante, 'id'>>
+      }
+      cuentas_compartidas_items: {
+        Row:    CuentaCompartidaItem
+        Insert: Omit<CuentaCompartidaItem, 'id' | 'creado_en'>
+        Update: Partial<Omit<CuentaCompartidaItem, 'id' | 'creado_en'>>
+      }
+      cuentas_compartidas_consumo: {
+        Row:    CuentaCompartidaConsumo
+        Insert: Omit<CuentaCompartidaConsumo, 'id' | 'actualizado_en'>
+        Update: Partial<Omit<CuentaCompartidaConsumo, 'id' | 'actualizado_en'>>
       }
     }
   }

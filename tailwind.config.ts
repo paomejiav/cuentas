@@ -11,8 +11,9 @@ const config: Config = {
   theme: {
     extend: {
       fontFamily: {
-        serif: ['var(--font-lora)', 'Georgia', 'serif'],
-        sans:  ['var(--font-dm-sans)', 'system-ui', 'sans-serif'],
+        serif:  ['var(--font-lora)', 'Georgia', 'serif'],
+        sans:   ['var(--font-dm-sans)', 'system-ui', 'sans-serif'],
+        display: ['var(--font-sora)', 'system-ui', 'sans-serif'],
       },
       colors: {
         bg:            'var(--color-bg)',

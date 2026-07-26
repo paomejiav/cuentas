@@ -33,9 +33,9 @@ export function Avatar({ nombre, color, size = 40, 'aria-label': ariaLabel }: Av
       <span
         aria-hidden="true"
         style={{
-          fontSize, fontWeight: 700,
+          fontSize, fontWeight: 800,
           color: textColor,
-          fontFamily: 'var(--font-dm-sans), sans-serif',
+          fontFamily: 'var(--font-sora), sans-serif',
           lineHeight: 1, userSelect: 'none',
         }}
       >

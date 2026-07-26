@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useRef, useState } from 'react'
+import { useRouter } from 'next/navigation'
 import { Avatar } from '@/components/app/Avatar'
 import { formatCLP } from '@/lib/format'
 import { eliminarGasto } from '@/lib/gastos'
@@ -15,6 +16,7 @@ interface GastoDetalleProps {
 }
 
 export function GastoDetalle({ gasto, miId, onClose, onEliminado }: GastoDetalleProps) {
+  const router = useRouter()
   const [visible, setVisible] = useState(false)
   const [confirmandoEliminar, setConfirmandoEliminar] = useState(false)
   const [eliminando, setEliminando] = useState(false)
@@ -42,7 +44,7 @@ export function GastoDetalle({ gasto, miId, onClose, onEliminado }: GastoDetalle
 
   const fecha = new Date(gasto.fecha + 'T12:00:00')
   const fechaFormateada = fecha.toLocaleDateString('es-CL', {
-    weekday: 'long', day: 'numeric', month: 'long', year: 'numeric',
+    weekday: 'short', day: 'numeric', month: 'short',
   }).replace(/^\w/, c => c.toUpperCase())
 
   const yo = gasto.divisiones.find(d => d.integrante?.id === miId)
@@ -55,7 +57,7 @@ export function GastoDetalle({ gasto, miId, onClose, onEliminado }: GastoDetalle
         onClick={cerrar}
         style={{
           position: 'fixed', inset: 0, zIndex: 60,
-          background: 'rgba(0,0,0,0.4)',
+          background: 'rgba(26,26,30,0.45)',
           opacity: visible ? 1 : 0,
           transition: 'opacity 280ms ease',
         }}
@@ -78,203 +80,138 @@ export function GastoDetalle({ gasto, miId, onClose, onEliminado }: GastoDetalle
         }}
       >
         {/* Handle */}
-        <div style={{ display: 'flex', justifyContent: 'center', padding: '12px 0 8px' }}>
+        <div style={{ display: 'flex', justifyContent: 'center', padding: '12px 0 4px' }}>
           <div style={{ width: 40, height: 4, borderRadius: 2, background: 'var(--color-border)' }} />
         </div>
 
-        <div style={{ padding: '8px 20px 0' }}>
-          {/* Cabecera */}
-          <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: 20 }}>
-            <div style={{ flex: 1, minWidth: 0 }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 4 }}>
-                <span style={{ fontSize: 28 }}>
-                  {CATEGORIA_EMOJI[gasto.categoria] ?? '📦'}
-                </span>
-                <h2 style={{
-                  margin: 0,
-                  fontSize: 20,
-                  fontWeight: 700,
-                  color: 'var(--color-text-primary)',
-                  fontFamily: 'var(--font-lora), serif',
-                  lineHeight: 1.2,
-                }}>
-                  {gasto.descripcion}
-                </h2>
-              </div>
-              <p style={{
-                margin: 0,
-                fontSize: 12,
-                color: 'var(--color-text-secondary)',
-                fontFamily: 'var(--font-dm-sans), sans-serif',
-                textTransform: 'capitalize',
-              }}>
-                {CATEGORIA_LABEL[gasto.categoria]} · {fechaFormateada}
-              </p>
-            </div>
-            <button onClick={cerrar} style={{
-              background: 'var(--color-card)',
-              border: 'none',
-              borderRadius: 10,
-              width: 32, height: 32,
-              display: 'flex', alignItems: 'center', justifyContent: 'center',
-              cursor: 'pointer', flexShrink: 0, marginLeft: 12,
-            }}>
-              <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
-                <path d="M2 2l10 10M12 2L2 12" stroke="var(--color-text-secondary)" strokeWidth="1.8" strokeLinecap="round" />
+        <div style={{ padding: '12px 20px 0' }}>
+          {/* Cabecera: cerrar + título + eliminar */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 20 }}>
+            <button
+              onClick={cerrar}
+              aria-label="Cerrar"
+              style={{
+                width: 42, height: 42, borderRadius: 13, padding: 0,
+                background: 'var(--color-surface-white)', border: '1px solid var(--color-border)',
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                cursor: 'pointer', flexShrink: 0,
+              }}
+            >
+              <svg width="18" height="18" viewBox="0 0 18 18" fill="none">
+                <path d="M11 4l-5 5 5 5" stroke="var(--color-text-primary)" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
               </svg>
             </button>
+            <h2 style={{
+              flex: 1, margin: 0, fontSize: 19, fontWeight: 700, color: 'var(--color-text-primary)',
+              fontFamily: 'var(--font-sora), sans-serif', letterSpacing: '-0.01em',
+            }}>
+              Detalle del gasto
+            </h2>
+            {!confirmandoEliminar && (
+              <button
+                onClick={() => setConfirmandoEliminar(true)}
+                aria-label="Eliminar gasto"
+                style={{
+                  width: 38, height: 38, borderRadius: 13, padding: 0,
+                  background: 'var(--color-surface-white)', border: '1px solid var(--color-border)',
+                  display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  cursor: 'pointer', flexShrink: 0,
+                }}
+              >
+                <svg width="17" height="17" viewBox="0 0 20 20" fill="none">
+                  <path d="M4 6h12M8 6V4.5A1.5 1.5 0 019.5 3h1A1.5 1.5 0 0112 4.5V6m2 0v10a1 1 0 01-1 1H7a1 1 0 01-1-1V6" stroke="var(--color-negative)" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+                </svg>
+              </button>
+            )}
           </div>
 
-          {/* Monto total */}
-          <div style={{
-            background: 'var(--color-card)',
-            borderRadius: 18,
-            padding: '14px 18px',
-            marginBottom: 16,
-          }}>
-            <p style={{
-              margin: 0,
-              fontSize: 11,
-              fontWeight: 600,
-              color: 'var(--color-text-secondary)',
-              fontFamily: 'var(--font-dm-sans), sans-serif',
-              textTransform: 'uppercase',
-              letterSpacing: '0.07em',
+          {/* Monto + categoría, centrado */}
+          <div style={{ textAlign: 'center', padding: '8px 0 22px' }}>
+            <div style={{
+              width: 60, height: 60, borderRadius: 18, background: 'var(--tint-cta)',
+              fontSize: 28, margin: '0 auto 14px',
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
             }}>
-              Total del gasto
-            </p>
-            <p style={{
-              margin: '4px 0 0',
-              fontSize: 28,
-              fontWeight: 700,
-              color: 'var(--color-text-primary)',
-              fontFamily: 'var(--font-lora), serif',
-            }}>
-              {formatCLP(gasto.monto_total)}
-            </p>
-          </div>
-
-          {/* Quién pagó */}
-          <div style={{
-            background: 'var(--color-card)',
-            borderRadius: 18,
-            padding: '14px 16px',
-            marginBottom: 16,
-            display: 'flex',
-            alignItems: 'center',
-            gap: 12,
-          }}>
-            <Avatar
-              nombre={gasto.pagador?.nombre ?? '?'}
-              color={gasto.pagador?.avatar_color ?? '#A8D8B9'}
-              size={40}
-            />
-            <div>
-              <p style={{
-                margin: 0,
-                fontSize: 11,
-                fontWeight: 600,
-                color: 'var(--color-text-secondary)',
-                fontFamily: 'var(--font-dm-sans), sans-serif',
-                textTransform: 'uppercase',
-                letterSpacing: '0.07em',
-              }}>
-                Pagó
-              </p>
-              <p style={{
-                margin: '2px 0 0',
-                fontSize: 15,
-                fontWeight: 600,
-                color: 'var(--color-text-primary)',
-                fontFamily: 'var(--font-dm-sans), sans-serif',
-              }}>
-                {yoPague ? 'Tú' : gasto.pagador?.nombre}
-              </p>
+              {CATEGORIA_EMOJI[gasto.categoria] ?? '📦'}
             </div>
+            <div style={{ fontFamily: 'var(--font-sora), sans-serif', fontSize: 36, fontWeight: 800, letterSpacing: '-0.03em', color: 'var(--color-text-primary)' }}>
+              {formatCLP(gasto.monto_total)}
+            </div>
+            <p style={{ margin: '6px 0 0', fontSize: 15, fontWeight: 600, color: 'var(--color-text-primary)', fontFamily: 'var(--font-dm-sans), sans-serif' }}>
+              {gasto.descripcion}
+            </p>
+            <div style={{
+              display: 'inline-flex', alignItems: 'center', gap: 6, marginTop: 10,
+              background: 'var(--tint-cta)', border: '1px solid var(--border-cta)', borderRadius: 100,
+              padding: '5px 12px', fontSize: 12.5, fontWeight: 600, color: 'var(--color-cta-dark)',
+            }}>
+              {CATEGORIA_EMOJI[gasto.categoria] ?? '📦'} {CATEGORIA_LABEL[gasto.categoria]}
+            </div>
+          </div>
 
-            {/* Mi parte */}
-            {yo && (
-              <div style={{ marginLeft: 'auto', textAlign: 'right' }}>
-                <p style={{
-                  margin: 0,
-                  fontSize: 11,
-                  fontWeight: 600,
-                  color: 'var(--color-text-secondary)',
-                  fontFamily: 'var(--font-dm-sans), sans-serif',
-                  textTransform: 'uppercase',
-                  letterSpacing: '0.07em',
-                }}>
-                  Tu parte
-                </p>
-                <p style={{
-                  margin: '2px 0 0',
-                  fontSize: 16,
-                  fontWeight: 700,
-                  color: yoPague ? 'var(--color-positive)' : 'var(--color-negative)',
-                  fontFamily: 'var(--font-dm-sans), sans-serif',
-                }}>
-                  {formatCLP(yo.monto_asignado)}
+          {/* Pagado por + fecha */}
+          <div style={{ background: 'var(--color-card)', border: '1px solid var(--color-border)', borderRadius: 18, padding: '4px 16px', marginBottom: 22 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '13px 0', borderBottom: '1px solid var(--color-divider)' }}>
+              <Avatar nombre={gasto.pagador?.nombre ?? '?'} color={gasto.pagador?.avatar_color ?? '#A8D8B9'} size={38} />
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <p style={{ margin: 0, fontSize: 13.5, fontWeight: 700, color: 'var(--color-text-primary)', fontFamily: 'var(--font-dm-sans), sans-serif' }}>
+                  Pagado por {yoPague ? 'ti' : gasto.pagador?.nombre}
                 </p>
               </div>
-            )}
+              <span style={{ fontFamily: 'var(--font-sora), sans-serif', fontSize: 14, fontWeight: 700, color: 'var(--color-text-primary)' }}>
+                {formatCLP(gasto.monto_total)}
+              </span>
+            </div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '13px 0' }}>
+              <div style={{ width: 38, height: 38, borderRadius: 13, background: 'var(--color-icon-bg)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                <svg width="18" height="18" viewBox="0 0 20 20" fill="none">
+                  <rect x="3" y="4" width="14" height="13" rx="2.5" stroke="var(--color-neutral)" strokeWidth="1.5" />
+                  <path d="M3 8h14M7 2.5v3M13 2.5v3" stroke="var(--color-neutral)" strokeWidth="1.5" strokeLinecap="round" />
+                </svg>
+              </div>
+              <p style={{ flex: 1, margin: 0, fontSize: 13.5, fontWeight: 700, color: 'var(--color-text-primary)', fontFamily: 'var(--font-dm-sans), sans-serif' }}>
+                Fecha
+              </p>
+              <span style={{ fontSize: 13, color: 'var(--color-text-secondary)', fontWeight: 500, fontFamily: 'var(--font-dm-sans), sans-serif' }}>
+                {fechaFormateada}
+              </span>
+            </div>
           </div>
 
           {/* División completa */}
           <p style={{
-            margin: '0 4px 10px',
-            fontSize: 11,
-            fontWeight: 600,
-            color: 'var(--color-text-secondary)',
-            fontFamily: 'var(--font-dm-sans), sans-serif',
-            textTransform: 'uppercase',
-            letterSpacing: '0.07em',
+            margin: '0 2px 10px', fontSize: 11, fontWeight: 700, color: 'var(--color-text-muted)',
+            fontFamily: 'var(--font-dm-sans), sans-serif', textTransform: 'uppercase', letterSpacing: '0.08em',
           }}>
-            División ({gasto.divisiones.length} participantes)
+            División · {gasto.divisiones.length} participantes
           </p>
 
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 24 }}>
+          <div style={{ background: 'var(--color-card)', border: '1px solid var(--color-border)', borderRadius: 18, padding: '4px 16px', marginBottom: 24 }}>
             {gasto.divisiones
               .slice()
               .sort((a, b) => b.monto_asignado - a.monto_asignado)
-              .map(div => {
+              .map((div, idx, arr) => {
                 const esYo = div.integrante?.id === miId
                 const esPagador = div.integrante?.id === gasto.pagador?.id
+                const pill = esPagador
+                  ? { label: 'Pagó', color: 'var(--color-positive)', tint: 'var(--color-positive-tint)', border: 'var(--color-positive-border)' }
+                  : { label: 'Debe', color: 'var(--color-negative)', tint: 'var(--color-negative-tint)', border: 'var(--color-negative-border)' }
                 return (
                   <div key={div.integrante?.id} style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: 12,
-                    background: esYo ? 'var(--color-card)' : 'transparent',
-                    borderRadius: 14,
-                    padding: esYo ? '10px 14px' : '4px 14px',
+                    display: 'flex', alignItems: 'center', gap: 12, padding: '12px 0',
+                    borderBottom: idx === arr.length - 1 ? 'none' : '1px solid var(--color-divider)',
                   }}>
-                    <Avatar
-                      nombre={div.integrante?.nombre ?? '?'}
-                      color={div.integrante?.avatar_color ?? '#A8D8B9'}
-                      size={34}
-                    />
-                    <span style={{
-                      flex: 1,
-                      fontSize: 14,
-                      fontWeight: esYo ? 600 : 400,
-                      color: 'var(--color-text-primary)',
-                      fontFamily: 'var(--font-dm-sans), sans-serif',
-                    }}>
+                    <Avatar nombre={div.integrante?.nombre ?? '?'} color={div.integrante?.avatar_color ?? '#A8D8B9'} size={34} />
+                    <span style={{ flex: 1, fontSize: 14, fontWeight: 600, color: 'var(--color-text-primary)', fontFamily: 'var(--font-dm-sans), sans-serif' }}>
                       {esYo ? 'Tú' : div.integrante?.nombre}
-                      {esPagador && (
-                        <span style={{ marginLeft: 6, fontSize: 11, color: 'var(--color-positive)', fontWeight: 600 }}>
-                          · pagó
-                        </span>
-                      )}
                     </span>
                     <span style={{
-                      fontSize: 14,
-                      fontWeight: 600,
-                      color: esYo
-                        ? (yoPague ? 'var(--color-positive)' : 'var(--color-negative)')
-                        : 'var(--color-text-primary)',
-                      fontFamily: 'var(--font-dm-sans), sans-serif',
+                      display: 'inline-flex', alignItems: 'center', gap: 5, marginRight: 10,
+                      border: `1px solid ${pill.border}`, background: pill.tint, borderRadius: 100, padding: '3px 9px',
                     }}>
+                      <span style={{ fontSize: 11, fontWeight: 600, color: pill.color }}>{pill.label}</span>
+                    </span>
+                    <span style={{ fontFamily: 'var(--font-sora), sans-serif', fontSize: 14, fontWeight: 700, color: 'var(--color-text-primary)' }}>
                       {formatCLP(div.monto_asignado)}
                     </span>
                   </div>
@@ -282,47 +219,40 @@ export function GastoDetalle({ gasto, miId, onClose, onEliminado }: GastoDetalle
               })}
           </div>
 
+          {yo && (
+            <p style={{ margin: '-12px 2px 24px', fontSize: 12, color: 'var(--color-text-muted)', fontFamily: 'var(--font-dm-sans), sans-serif' }}>
+              Tu parte: <strong style={{ color: yoPague ? 'var(--color-positive)' : 'var(--color-negative)' }}>{formatCLP(yo.monto_asignado)}</strong>
+            </p>
+          )}
+
           {/* Acciones */}
-          {!confirmandoEliminar ? (
-            <div style={{ display: 'flex', gap: 10 }}>
-              <button
-                onClick={() => setConfirmandoEliminar(true)}
-                style={{
-                  flex: 1,
-                  height: 48,
-                  borderRadius: 100,
-                  border: 'none',
-                  background: 'var(--color-card)',
-                  color: 'var(--color-negative)',
-                  fontSize: 14,
-                  fontWeight: 600,
-                  fontFamily: 'var(--font-dm-sans), sans-serif',
-                  cursor: 'pointer',
-                }}
-              >
-                Eliminar
-              </button>
-            </div>
-          ) : (
+          {!confirmandoEliminar && (
+            <button
+              onClick={() => router.push(`/gastos/${gasto.id}/editar`)}
+              style={{
+                width: '100%', height: 54, borderRadius: 15, border: '1px solid var(--color-border)',
+                background: 'var(--color-surface-white)', color: 'var(--color-text-primary)',
+                fontSize: 15, fontWeight: 700, fontFamily: 'var(--font-dm-sans), sans-serif',
+                cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 9,
+              }}
+            >
+              <svg width="18" height="18" viewBox="0 0 20 20" fill="none"><path d="M4 13.5V16h2.5l8-8-2.5-2.5-8 8z" stroke="var(--color-text-primary)" strokeWidth="1.6" strokeLinejoin="round" /></svg>
+              Editar gasto
+            </button>
+          )}
+
+          {confirmandoEliminar && (
             <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-              <p style={{
-                margin: 0,
-                fontSize: 14,
-                textAlign: 'center',
-                color: 'var(--color-text-primary)',
-                fontFamily: 'var(--font-dm-sans), sans-serif',
-              }}>
+              <p style={{ margin: 0, fontSize: 14, textAlign: 'center', color: 'var(--color-text-primary)', fontFamily: 'var(--font-dm-sans), sans-serif' }}>
                 ¿Segura? Esto no se puede deshacer.
               </p>
               <div style={{ display: 'flex', gap: 10 }}>
                 <button
                   onClick={() => setConfirmandoEliminar(false)}
                   style={{
-                    flex: 1, height: 48, borderRadius: 100, border: 'none',
-                    background: 'var(--color-card)',
-                    color: 'var(--color-text-primary)',
-                    fontSize: 14, fontWeight: 600,
-                    fontFamily: 'var(--font-dm-sans), sans-serif', cursor: 'pointer',
+                    flex: 1, height: 48, borderRadius: 100, border: '1px solid var(--color-border)',
+                    background: 'var(--color-surface-white)', color: 'var(--color-text-primary)',
+                    fontSize: 14, fontWeight: 700, fontFamily: 'var(--font-dm-sans), sans-serif', cursor: 'pointer',
                   }}
                 >
                   Cancelar
@@ -332,10 +262,8 @@ export function GastoDetalle({ gasto, miId, onClose, onEliminado }: GastoDetalle
                   disabled={eliminando}
                   style={{
                     flex: 1, height: 48, borderRadius: 100, border: 'none',
-                    background: 'var(--color-negative)',
-                    color: 'white',
-                    fontSize: 14, fontWeight: 600,
-                    fontFamily: 'var(--font-dm-sans), sans-serif', cursor: 'pointer',
+                    background: 'var(--color-negative)', color: 'white',
+                    fontSize: 14, fontWeight: 700, fontFamily: 'var(--font-dm-sans), sans-serif', cursor: 'pointer',
                     opacity: eliminando ? 0.6 : 1,
                   }}
                 >

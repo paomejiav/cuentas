@@ -1,5 +1,5 @@
 import type { Metadata } from 'next'
-import { Lora, DM_Sans } from 'next/font/google'
+import { Lora, DM_Sans, Sora } from 'next/font/google'
 import { SessionProvider } from '@/lib/session-store'
 import './globals.css'
 
@@ -12,8 +12,16 @@ const lora = Lora({
 
 const dmSans = DM_Sans({
   subsets: ['latin'],
-  weight: ['400', '500', '600'],
+  weight: ['400', '500', '600', '700'],
   variable: '--font-dm-sans',
+  display: 'swap',
+})
+
+// Rediseño "Walto" — títulos, subtítulos y cifras
+const sora = Sora({
+  subsets: ['latin'],
+  weight: ['400', '600', '700', '800'],
+  variable: '--font-sora',
   display: 'swap',
 })
 
@@ -28,7 +36,7 @@ export default function RootLayout({
   children: React.ReactNode
 }) {
   return (
-    <html lang="es" className={`${lora.variable} ${dmSans.variable}`}>
+    <html lang="es" className={`${lora.variable} ${dmSans.variable} ${sora.variable}`}>
       <body>
         <SessionProvider>{children}</SessionProvider>
       </body>

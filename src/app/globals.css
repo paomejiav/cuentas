@@ -1,4 +1,4 @@
-@import url('https://fonts.googleapis.com/css2?family=Lora:wght@700&family=DM+Sans:wght@400;500;600&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Sora:wght@400;600;700;800&family=DM+Sans:wght@400;500;600;700&display=swap');
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
@@ -12,19 +12,43 @@ html, body {
 }
 
 :root {
-  --color-bg:             #F0EDE8;
-  --color-card:           #E8E4DE;
-  --color-card-light:     #F5F2EE;
+  /* ── Rediseño "Walto" — ver design_handoff_better_than_split/README.md ── */
+  --color-bg:             #F4F5F7;
+  --color-card:           #FFFFFF;
+  --color-card-light:     #EDEDF1;
   --color-surface-white:  #FFFFFF;
-  --color-cta:            #00C851;
-  --color-cta-dark:       #009E40;
-  --color-text-primary:   #1C2B1A;
-  --color-text-secondary: #6B7468;
-  --color-text-disabled:  #B0ADA8;
-  --color-positive:       #009E40;
-  --color-negative:       #C0392B;
-  --color-neutral:        #8C8880;
-  --color-border:         #D8D4CE;
+  --color-border:         #ECECF0;
+  --color-divider:        #F1F1F5;
+  --color-icon-bg:        #F5F5F8;
+  --color-track:          #EEF0F3;
+
+  --color-cta:            #7C6BF0;
+  --color-cta-dark:       #6F5CE8;
+  --gradient-cta:         linear-gradient(135deg, #8E7DF6, #6F5CE8);
+  --tint-cta:             #EFECFD;
+  --border-cta:           #D8CFFA;
+  --shadow-cta:           0 10px 22px -6px rgba(124, 107, 240, .5);
+  --shadow-fab:           0 9px 20px -5px rgba(124, 107, 240, .55);
+
+  --color-text-primary:   #1A1A1E;
+  --color-text-secondary: #6B7280;
+  --color-text-muted:     #9AA0A8;
+  --color-text-disabled:  #B0B4BD;
+
+  --color-positive:        #12B76A;
+  --color-positive-tint:   #EBF9F1;
+  --color-positive-border: #BEEBD2;
+  --color-negative:        #E5352B;
+  --color-negative-tint:   #FDECEA;
+  --color-negative-border: #F6C6C1;
+  --color-warning:        #C88A1E;
+  --color-warning-dot:    #E0A02A;
+  --color-warning-tint:   #FCF3E0;
+  --color-warning-border: #F3D9A0;
+  --color-neutral:        #8A8F98;
+  --color-neutral-dot:    #A2A7AE;
+  --color-neutral-tint:   #F5F5F8;
+  --color-neutral-border: #E6E6EC;
 
   --page-px: 20px;
   --space-xs:  4px;
@@ -88,7 +112,7 @@ body {
 
 /* Hover en cards de saldo */
 .saldo-card:hover {
-  background: #DEDAD4 !important;
+  background: var(--color-divider) !important;
 }
 
 /* Grid de división — 2 cols en desktop */
@@ -128,6 +152,16 @@ body {
     top: 20px;
     margin-bottom: 0;
   }
+}
+
+/* Barras rayadas — entrada (rediseño Walto) */
+@keyframes barGrow {
+  from { transform: scaleX(0); }
+  to   { transform: scaleX(1); }
+}
+.bar-stripe {
+  transform-origin: left;
+  animation: barGrow .9s cubic-bezier(.2,.7,.3,1) both;
 }
 
 /* Fade-in stagger para listas */

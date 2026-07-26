@@ -5,29 +5,37 @@ import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { useSession } from '@/lib/session-store'
 import { calcularSaldos, type SaldoPar } from '@/lib/saldos'
-import { formatCLP } from '@/lib/format'
+import { formatCLP, formatearTiempoRelativo } from '@/lib/format'
 import { Avatar } from '@/components/app/Avatar'
 import { BottomNav } from '@/components/app/BottomNav'
 import { Toast } from '@/components/app/Toast'
 import { supabase } from '@/lib/supabase'
 
-// ── Skeleton con shimmer ─────────────────────────────────────
-function SkeletonCard() {
+// ── Barra rayada (firma visual del rediseño) ──────────────────
+function BarraRayada({ pct, color, colorClaro }: { pct: number; color: string; colorClaro: string }) {
   return (
-    <div
-      aria-hidden="true"
-      style={{
-        borderRadius: 20, padding: '14px 16px',
-        display: 'flex', alignItems: 'center', gap: 14,
-        background: 'var(--color-card)',
-      }}
-    >
-      <div className="skeleton" style={{ width: 44, height: 44, borderRadius: '50%', flexShrink: 0 }} />
-      <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 7 }}>
+    <div style={{ height: 11, borderRadius: 7, background: 'var(--color-track)', overflow: 'hidden' }}>
+      <div
+        className="bar-stripe"
+        style={{
+          width: `${pct}%`, height: '100%', borderRadius: 7,
+          background: `repeating-linear-gradient(-45deg, ${color}, ${color} 5px, ${colorClaro} 5px, ${colorClaro} 10px)`,
+        }}
+      />
+    </div>
+  )
+}
+
+// ── Skeleton fila ─────────────────────────────────────────────
+function SkeletonRow() {
+  return (
+    <div aria-hidden="true" style={{ display: 'flex', alignItems: 'center', gap: 13, padding: '13px 0' }}>
+      <div className="skeleton" style={{ width: 42, height: 42, borderRadius: '50%', flexShrink: 0 }} />
+      <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 6 }}>
         <div className="skeleton" style={{ height: 14, width: '38%', borderRadius: 6 }} />
-        <div className="skeleton" style={{ height: 12, width: '54%', borderRadius: 6 }} />
+        <div className="skeleton" style={{ height: 11, width: '30%', borderRadius: 6 }} />
       </div>
-      <div className="skeleton" style={{ height: 14, width: 48, borderRadius: 6 }} />
+      <div className="skeleton" style={{ height: 22, width: 76, borderRadius: 100 }} />
     </div>
   )
 }
@@ -35,17 +43,20 @@ function SkeletonCard() {
 // ── Estado vacío (cero gastos en el grupo) ───────────────────
 function EstadoVacio() {
   return (
-    <div style={{ textAlign: 'center', padding: '40px 20px' }}>
-      <div style={{ fontSize: 52, marginBottom: 12 }}>🧾</div>
+    <div style={{
+      background: 'var(--color-card)', border: '1px solid var(--color-border)', borderRadius: 18,
+      textAlign: 'center', padding: '40px 24px',
+    }}>
+      <div style={{ fontSize: 44, marginBottom: 10 }}>🧾</div>
       <p style={{
-        margin: 0, fontSize: 18, fontWeight: 700,
+        margin: 0, fontSize: 17, fontWeight: 700,
         color: 'var(--color-text-primary)',
-        fontFamily: 'var(--font-lora), serif',
+        fontFamily: 'var(--font-sora), sans-serif',
       }}>
         Todavía no hay gastos
       </p>
       <p style={{
-        margin: '8px 0 24px', fontSize: 14,
+        margin: '8px 0 22px', fontSize: 13.5,
         color: 'var(--color-text-secondary)',
         fontFamily: 'var(--font-dm-sans), sans-serif',
         lineHeight: 1.5,
@@ -56,60 +67,56 @@ function EstadoVacio() {
         href="/gastos/nuevo"
         style={{
           display: 'inline-flex', alignItems: 'center', gap: 8,
-          padding: '14px 28px', borderRadius: 100,
-          background: 'var(--color-cta)', color: 'white',
+          height: 48, padding: '0 24px', borderRadius: 100,
+          background: 'var(--gradient-cta)', color: 'white',
           textDecoration: 'none',
-          fontSize: 15, fontWeight: 600,
+          fontSize: 14.5, fontWeight: 700,
           fontFamily: 'var(--font-dm-sans), sans-serif',
+          boxShadow: 'var(--shadow-cta)',
         }}
       >
-        <span style={{ fontSize: 18 }}>+</span> Agregar primer gasto
+        <svg width="16" height="16" viewBox="0 0 18 18" fill="none" aria-hidden="true">
+          <path d="M9 4v10M4 9h10" stroke="white" strokeWidth="1.8" strokeLinecap="round" />
+        </svg>
+        Agregar primer gasto
       </Link>
     </div>
   )
 }
 
-// ── Card de saldo por par ────────────────────────────────────
-function SaldoCard({
-  par, onClick, animDelay,
+// ── Fila de saldo por persona ────────────────────────────────
+function FilaSaldo({
+  par, esUltima, onClick,
 }: {
-  par: SaldoPar; onClick: () => void; animDelay: number
+  par: SaldoPar; esUltima: boolean; onClick: () => void
 }) {
   const { neto, integrante } = par
 
-  const etiqueta =
-    neto > 0 ? `Te debe ${formatCLP(neto)}`
-    : neto < 0 ? `Le debes ${formatCLP(-neto)}`
-    : 'Sin deudas ✓'
-
-  const colorEtiqueta =
-    neto > 0 ? 'var(--color-positive)'
-    : neto < 0 ? 'var(--color-negative)'
-    : 'var(--color-text-secondary)'
+  const pill =
+    neto > 0
+      ? { label: 'Te debe', color: 'var(--color-positive)', tint: 'var(--color-positive-tint)', border: 'var(--color-positive-border)' }
+      : neto < 0
+      ? { label: 'Le debes', color: 'var(--color-negative)', tint: 'var(--color-negative-tint)', border: 'var(--color-negative-border)' }
+      : { label: 'Al día', color: 'var(--color-neutral)', tint: 'var(--color-neutral-tint)', border: 'var(--color-neutral-border)' }
 
   return (
     <button
       onClick={onClick}
-      aria-label={`${integrante.nombre}: ${etiqueta}`}
-      className="list-item-enter saldo-card"
+      className="row-lift"
+      aria-label={`${integrante.nombre}: ${pill.label} ${formatCLP(Math.abs(neto))}`}
       style={{
-        background: 'var(--color-card)', borderRadius: 20,
-        padding: '14px 16px', border: 'none', width: '100%',
-        display: 'flex', alignItems: 'center', gap: 14,
+        display: 'flex', alignItems: 'center', gap: 13, width: '100%',
+        padding: '13px 0', border: 'none', background: 'transparent',
         cursor: 'pointer', textAlign: 'left',
-        transition: 'transform 120ms ease, background 120ms ease',
+        borderBottom: esUltima ? 'none' : '1px solid var(--color-divider)',
         WebkitTapHighlightColor: 'transparent',
-        animationDelay: `${animDelay}ms`,
       }}
-      onPointerDown={e => (e.currentTarget.style.transform = 'scale(0.97)')}
-      onPointerUp={e => (e.currentTarget.style.transform = 'scale(1)')}
-      onPointerLeave={e => (e.currentTarget.style.transform = 'scale(1)')}
     >
-      <Avatar nombre={integrante.nombre} color={integrante.avatar_color} size={44} />
+      <Avatar nombre={integrante.nombre} color={integrante.avatar_color} size={42} />
 
       <div style={{ flex: 1, minWidth: 0 }}>
         <p style={{
-          margin: 0, fontSize: 15, fontWeight: 600,
+          margin: 0, fontSize: 14.5, fontWeight: 700,
           color: 'var(--color-text-primary)',
           fontFamily: 'var(--font-dm-sans), sans-serif',
           whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
@@ -117,107 +124,25 @@ function SaldoCard({
           {integrante.nombre}
         </p>
         <p style={{
-          margin: '2px 0 0', fontSize: 13,
-          fontWeight: neto === 0 ? 400 : 600,
-          color: colorEtiqueta,
+          margin: '1px 0 0', fontSize: 11.5,
+          color: 'var(--color-text-muted)',
           fontFamily: 'var(--font-dm-sans), sans-serif',
         }}>
-          {etiqueta}
+          {formatCLP(Math.abs(neto))}
         </p>
       </div>
 
-      <svg width="16" height="16" viewBox="0 0 16 16" fill="none"
-        aria-hidden="true" style={{ flexShrink: 0, opacity: 0.5 }}>
-        <path d="M6 4l4 4-4 4" stroke="var(--color-text-primary)"
-          strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
-      </svg>
-    </button>
-  )
-}
-
-// ── Resumen de deuda total ────────────────────────────────────
-function ResumenDeuda({ saldos }: { saldos: SaldoPar[] }) {
-  const totalQueTeDeban = saldos.filter(s => s.neto > 0).reduce((acc, s) => acc + s.neto, 0)
-  const totalQueDebes   = saldos.filter(s => s.neto < 0).reduce((acc, s) => acc + Math.abs(s.neto), 0)
-
-  if (totalQueTeDeban === 0 && totalQueDebes === 0 && saldos.length > 0) {
-    return (
       <div style={{
-        background: 'var(--color-card)', borderRadius: 20,
-        padding: '20px', textAlign: 'center', marginBottom: 8,
+        display: 'inline-flex', alignItems: 'center', gap: 5, flexShrink: 0,
+        border: `1px solid ${pill.border}`, background: pill.tint,
+        borderRadius: 100, padding: '4px 10px',
       }}>
-        <div style={{ fontSize: 30, marginBottom: 6 }}>🎉</div>
-        <p style={{
-          margin: 0, fontSize: 15, fontWeight: 600,
-          color: 'var(--color-text-primary)',
-          fontFamily: 'var(--font-dm-sans), sans-serif',
-        }}>
-          ¡Todo al día!
-        </p>
-        <p style={{
-          margin: '4px 0 0', fontSize: 13,
-          color: 'var(--color-text-secondary)',
-          fontFamily: 'var(--font-dm-sans), sans-serif',
-        }}>
-          Sin deudas pendientes entre el grupo
-        </p>
+        <span style={{ width: 6, height: 6, borderRadius: '50%', background: pill.color, flexShrink: 0 }} />
+        <span style={{ fontSize: 11.5, fontWeight: 600, color: pill.color, fontFamily: 'var(--font-dm-sans), sans-serif' }}>
+          {pill.label}
+        </span>
       </div>
-    )
-  }
-
-  if (totalQueTeDeban === 0 && totalQueDebes === 0) return null
-
-  return (
-    <div style={{
-      background: 'var(--color-card)', borderRadius: 20,
-      padding: '20px 24px', display: 'flex',
-      justifyContent: 'space-around', marginBottom: 8,
-      gap: 12,
-    }}>
-      {totalQueDebes > 0 && (
-        <div style={{ textAlign: 'center', flex: 1 }}>
-          <p style={{
-            margin: 0, fontSize: 11, fontWeight: 600,
-            color: 'var(--color-text-secondary)',
-            fontFamily: 'var(--font-dm-sans), sans-serif',
-            textTransform: 'uppercase', letterSpacing: '0.08em',
-          }}>
-            Debes en total
-          </p>
-          <p style={{
-            margin: '6px 0 0', fontSize: 28, fontWeight: 700,
-            color: 'var(--color-negative)',
-            fontFamily: 'var(--font-lora), serif',
-            lineHeight: 1,
-          }}>
-            {formatCLP(totalQueDebes)}
-          </p>
-        </div>
-      )}
-      {totalQueTeDeban > 0 && totalQueDebes > 0 && (
-        <div style={{ width: 1, background: 'var(--color-border)', flexShrink: 0, alignSelf: 'stretch' }} />
-      )}
-      {totalQueTeDeban > 0 && (
-        <div style={{ textAlign: 'center', flex: 1 }}>
-          <p style={{
-            margin: 0, fontSize: 11, fontWeight: 600,
-            color: 'var(--color-text-secondary)',
-            fontFamily: 'var(--font-dm-sans), sans-serif',
-            textTransform: 'uppercase', letterSpacing: '0.08em',
-          }}>
-            Te deben en total
-          </p>
-          <p style={{
-            margin: '6px 0 0', fontSize: 28, fontWeight: 700,
-            color: 'var(--color-positive)',
-            fontFamily: 'var(--font-lora), serif',
-            lineHeight: 1,
-          }}>
-            {formatCLP(totalQueTeDeban)}
-          </p>
-        </div>
-      )}
-    </div>
+    </button>
   )
 }
 
@@ -228,6 +153,7 @@ export default function DashboardPage() {
   const [saldos, setSaldos] = useState<SaldoPar[]>([])
   const [cargando, setCargando] = useState(true)
   const [tieneGastos, setTieneGastos] = useState(true)
+  const [ultimaActividad, setUltimaActividad] = useState<string | null>(null)
   const [toast, setToast] = useState<{ mensaje: string; tipo: 'exito' | 'error' } | null>(null)
   const channelRef = useRef<ReturnType<typeof supabase.channel> | null>(null)
 
@@ -245,6 +171,17 @@ export default function DashboardPage() {
         .eq('grupo_id', sesion.grupo_id)
         .is('mes_cierre', null)
       setTieneGastos((count ?? 0) > 0)
+
+      // Gasto activo más reciente, para "Última actividad"
+      const { data: ultimo } = await supabase
+        .from('gastos')
+        .select('creado_en')
+        .eq('grupo_id', sesion.grupo_id)
+        .is('mes_cierre', null)
+        .order('creado_en', { ascending: false })
+        .limit(1)
+        .maybeSingle()
+      setUltimaActividad(ultimo?.creado_en ?? null)
     } catch {
       setToast({ mensaje: 'Sin conexión. Intenta de nuevo.', tipo: 'error' })
     } finally {
@@ -270,7 +207,6 @@ export default function DashboardPage() {
           const nuevoGasto = payload.new as { creado_por: string; descripcion: string }
           // Si no fui yo quien lo creó, mostrar notificación
           if (nuevoGasto.creado_por !== sesion.integrante_id) {
-            // Buscar nombre del integrante
             supabase
               .from('integrantes')
               .select('nombre')
@@ -284,7 +220,6 @@ export default function DashboardPage() {
                 })
               })
           }
-          // Recargar saldos en ambos casos
           cargarSaldos()
         }
       )
@@ -312,16 +247,22 @@ export default function DashboardPage() {
 
   if (sesionLoading || !sesion) return null
 
-  const hayDeudas = saldos.some(s => s.neto !== 0)
+  const totalTeDeben = saldos.filter(s => s.neto > 0).reduce((acc, s) => acc + s.neto, 0)
+  const totalDebes = saldos.filter(s => s.neto < 0).reduce((acc, s) => acc + Math.abs(s.neto), 0)
+  const saldoNeto = totalTeDeben - totalDebes
+  const maxBarra = Math.max(totalTeDeben, totalDebes, 1)
+  const pctTeDeben = totalTeDeben > 0 ? Math.max(4, (totalTeDeben / maxBarra) * 100) : 0
+  const pctDebes = totalDebes > 0 ? Math.max(4, (totalDebes / maxBarra) * 100) : 0
+  const todoAlDia = tieneGastos && totalTeDeben === 0 && totalDebes === 0
 
   return (
-    <div style={{ minHeight: '100vh', background: 'var(--color-bg)', paddingBottom: 80 }}>
+    <div style={{ minHeight: '100vh', background: 'var(--color-bg)', paddingBottom: 96 }}>
       <div style={{ maxWidth: 640, margin: '0 auto' }}>
 
       {/* ── HEADER ── */}
       <header style={{
         paddingTop: 'max(56px, calc(env(safe-area-inset-top, 0px) + 16px))',
-        paddingBottom: 20,
+        paddingBottom: 18,
         paddingLeft: 'var(--page-px)',
         paddingRight: 'var(--page-px)',
         display: 'flex', alignItems: 'center',
@@ -329,142 +270,177 @@ export default function DashboardPage() {
       }}>
         <div style={{ minWidth: 0 }}>
           <p style={{
-            margin: 0, fontSize: 12, fontWeight: 600,
-            color: 'var(--color-text-secondary)',
+            margin: 0, fontSize: 12.5,
+            color: 'var(--color-neutral)',
             fontFamily: 'var(--font-dm-sans), sans-serif',
-            textTransform: 'uppercase', letterSpacing: '0.08em',
           }}>
-            {sesion.grupo_nombre}
+            Hola, {sesion.nombre.split(' ')[0]} 👋
           </p>
           <h1 style={{
-            margin: '2px 0 0', fontSize: 26, fontWeight: 700,
+            margin: '2px 0 0', fontSize: 24, fontWeight: 800,
             color: 'var(--color-text-primary)',
-            fontFamily: 'var(--font-lora), serif',
-            lineHeight: 1.2,
+            fontFamily: 'var(--font-sora), sans-serif',
+            letterSpacing: '-0.02em',
             whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
           }}>
-            Mis saldos
+            Tus cuentas
           </h1>
         </div>
 
-        <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexShrink: 0 }}>
-          <Avatar
-            nombre={sesion.nombre}
-            color={sesion.avatar_color}
-            size={40}
-            aria-label={`Avatar de ${sesion.nombre}`}
-          />
-          {sesion.es_admin && (
-            <Link
-              href="/admin"
-              aria-label="Gestionar grupo"
-              style={{
-                background: 'var(--color-card)', border: 'none', borderRadius: 12,
-                width: 44, height: 44,
-                display: 'flex', alignItems: 'center', justifyContent: 'center',
-                textDecoration: 'none', flexShrink: 0,
-              }}
-            >
-              <svg width="18" height="18" viewBox="0 0 18 18" fill="none" aria-hidden="true">
-                <path d="M9 11.5a2.5 2.5 0 100-5 2.5 2.5 0 000 5z" stroke="var(--color-text-secondary)" strokeWidth="1.6" strokeLinecap="round"/>
-                <path d="M14.5 9a5.5 5.5 0 01-.08.94l1.37 1.07-1 1.73-1.63-.55a5.5 5.5 0 01-1.62.94l-.24 1.69h-2l-.24-1.69a5.5 5.5 0 01-1.62-.94l-1.63.55-1-1.73 1.37-1.07A5.52 5.52 0 013.5 9c0-.32.03-.63.08-.94L2.21 6.99l1-1.73 1.63.55a5.5 5.5 0 011.62-.94L6.7 3.18h2l.24 1.69a5.5 5.5 0 011.62.94l1.63-.55 1 1.73-1.37 1.07c.05.31.08.62.08.94z" stroke="var(--color-text-secondary)" strokeWidth="1.6" strokeLinecap="round"/>
-              </svg>
-            </Link>
-          )}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 9, flexShrink: 0 }}>
+          {/* Campana — decorativa hasta que exista la pantalla de novedades */}
+          <div
+            aria-hidden="true"
+            style={{
+              width: 42, height: 42, borderRadius: '50%',
+              background: 'var(--color-surface-white)', border: '1px solid var(--color-border)',
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+            }}
+          >
+            <svg width="18" height="18" viewBox="0 0 20 20" fill="none">
+              <path d="M10 3a4 4 0 00-4 4c0 3-1.2 4.3-1.8 4.9-.3.3-.1.8.3.8h11c.4 0 .6-.5.3-.8C15.2 11.3 14 10 14 7a4 4 0 00-4-4zM8.5 15.5a1.5 1.5 0 003 0" stroke="var(--color-text-secondary)" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" />
+            </svg>
+          </div>
+
           <button
             onClick={handleCerrarSesion}
             aria-label="Cerrar sesión"
             style={{
-              background: 'var(--color-card)', border: 'none', borderRadius: 12,
-              width: 44, height: 44,
+              width: 42, height: 42, borderRadius: '50%', padding: 0,
+              background: 'var(--color-surface-white)', border: '1px solid var(--color-border)',
               display: 'flex', alignItems: 'center', justifyContent: 'center',
               cursor: 'pointer', flexShrink: 0,
             }}
           >
-            <svg width="18" height="18" viewBox="0 0 18 18" fill="none" aria-hidden="true">
+            <svg width="16" height="16" viewBox="0 0 18 18" fill="none" aria-hidden="true">
               <path d="M7 3H4a1 1 0 00-1 1v10a1 1 0 001 1h3M11 12l3-3-3-3M14 9H7"
                 stroke="var(--color-text-secondary)"
                 strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
             </svg>
           </button>
+
+          <Avatar
+            nombre={sesion.nombre}
+            color={sesion.avatar_color}
+            size={42}
+            aria-label={`Avatar de ${sesion.nombre}`}
+          />
         </div>
       </header>
 
       {/* ── CONTENIDO ── */}
-      <main style={{ padding: '12px var(--page-px) 0' }}>
+      <main style={{ padding: '0 var(--page-px)' }}>
 
-        {!cargando && tieneGastos && <ResumenDeuda saldos={saldos} />}
+        {cargando && (
+          <div style={{ background: 'var(--color-card)', border: '1px solid var(--color-border)', borderRadius: 18, padding: '18px 18px 20px' }}>
+            <div className="skeleton" style={{ height: 12, width: 140, borderRadius: 6, marginBottom: 10 }} />
+            <div className="skeleton" style={{ height: 32, width: 170, borderRadius: 8, marginBottom: 18 }} />
+            <div className="skeleton" style={{ height: 58, borderRadius: 12, marginBottom: 10 }} />
+            <div className="skeleton" style={{ height: 58, borderRadius: 12 }} />
+          </div>
+        )}
+
+        {!cargando && tieneGastos && !todoAlDia && (
+          <div style={{ background: 'var(--color-card)', border: '1px solid var(--color-border)', borderRadius: 18, padding: '18px 18px 20px' }}>
+            <p style={{ margin: 0, fontSize: 12.5, color: 'var(--color-neutral)', fontFamily: 'var(--font-dm-sans), sans-serif' }}>
+              Saldo total del grupo
+            </p>
+            <div style={{ display: 'flex', alignItems: 'baseline', gap: 6, marginTop: 5 }}>
+              <span style={{
+                fontFamily: 'var(--font-sora), sans-serif', fontSize: 32, fontWeight: 800,
+                color: 'var(--color-text-primary)', letterSpacing: '-0.02em',
+              }}>
+                {formatCLP(Math.abs(saldoNeto))}
+              </span>
+              <span style={{ fontSize: 14, fontWeight: 600, color: 'var(--color-text-muted)' }}>CLP</span>
+            </div>
+            {ultimaActividad && (
+              <p style={{ margin: '4px 0 0', fontSize: 11.5, color: 'var(--color-text-muted)', fontFamily: 'var(--font-dm-sans), sans-serif' }}>
+                Última act. {formatearTiempoRelativo(ultimaActividad)}
+              </p>
+            )}
+
+            {totalTeDeben > 0 && (
+              <div style={{ marginTop: 16, border: '1px solid var(--color-divider)', borderRadius: 12, padding: '12px 13px' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline' }}>
+                  <span style={{ fontSize: 12, color: 'var(--color-text-secondary)', fontFamily: 'var(--font-dm-sans), sans-serif' }}>Te deben</span>
+                  <span style={{ fontSize: 14, fontWeight: 700, color: 'var(--color-text-primary)', fontFamily: 'var(--font-sora), sans-serif' }}>
+                    {formatCLP(totalTeDeben)}
+                  </span>
+                </div>
+                <div style={{ marginTop: 8 }}>
+                  <BarraRayada pct={pctTeDeben} color="#47C6F4" colorClaro="#6FD3F7" />
+                </div>
+              </div>
+            )}
+
+            {totalDebes > 0 && (
+              <div style={{ marginTop: totalTeDeben > 0 ? 10 : 16, border: '1px solid var(--color-divider)', borderRadius: 12, padding: '12px 13px' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline' }}>
+                  <span style={{ fontSize: 12, color: 'var(--color-text-secondary)', fontFamily: 'var(--font-dm-sans), sans-serif' }}>Debes</span>
+                  <span style={{ fontSize: 14, fontWeight: 700, color: 'var(--color-text-primary)', fontFamily: 'var(--font-sora), sans-serif' }}>
+                    {formatCLP(totalDebes)}
+                  </span>
+                </div>
+                <div style={{ marginTop: 8 }}>
+                  <BarraRayada pct={pctDebes} color="#F2B33D" colorClaro="#F6C463" />
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+
+        {!cargando && todoAlDia && (
+          <div style={{ background: 'var(--color-card)', border: '1px solid var(--color-border)', borderRadius: 18, padding: 22, textAlign: 'center' }}>
+            <div style={{ fontSize: 30, marginBottom: 6 }}>🎉</div>
+            <p style={{ margin: 0, fontSize: 15, fontWeight: 700, color: 'var(--color-text-primary)', fontFamily: 'var(--font-dm-sans), sans-serif' }}>
+              ¡Todo al día!
+            </p>
+            <p style={{ margin: '4px 0 0', fontSize: 13, color: 'var(--color-text-secondary)', fontFamily: 'var(--font-dm-sans), sans-serif' }}>
+              Sin deudas pendientes entre el grupo
+            </p>
+          </div>
+        )}
 
         {!cargando && !tieneGastos && <EstadoVacio />}
 
         {tieneGastos && (
           <>
-            <p style={{
-              margin: '28px 0 10px', fontSize: 11, fontWeight: 600,
-              color: 'var(--color-text-secondary)',
-              fontFamily: 'var(--font-dm-sans), sans-serif',
-              textTransform: 'uppercase', letterSpacing: '0.09em',
-            }}>
-              Con cada una
-            </p>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', margin: '22px 2px 12px' }}>
+              <span style={{
+                fontFamily: 'var(--font-sora), sans-serif', fontSize: 16, fontWeight: 700,
+                letterSpacing: '-0.01em', color: 'var(--color-text-primary)',
+              }}>
+                Saldos por persona
+              </span>
+              <Link href="/historial" style={{ fontSize: 12.5, fontWeight: 600, color: 'var(--color-cta)' }}>
+                Ver todo
+              </Link>
+            </div>
 
             <div
               role="list"
               aria-label="Saldos con cada integrante"
-              style={{ display: 'flex', flexDirection: 'column', gap: 6 }}
+              style={{ background: 'var(--color-card)', border: '1px solid var(--color-border)', borderRadius: 18, padding: '4px 16px' }}
             >
               {cargando
-                ? Array.from({ length: 4 }).map((_, i) => <SkeletonCard key={i} />)
+                ? Array.from({ length: 4 }).map((_, i) => <SkeletonRow key={i} />)
                 : saldos.map((par, i) => (
                     <div role="listitem" key={par.integrante.id}>
-                      <SaldoCard
+                      <FilaSaldo
                         par={par}
-                        animDelay={i * 40}
+                        esUltima={i === saldos.length - 1}
                         onClick={() => router.push(`/historial?persona=${par.integrante.id}`)}
                       />
                     </div>
                   ))
               }
             </div>
-
-            {!cargando && saldos.length > 0 && (
-              <p style={{
-                margin: '28px 0 0', fontSize: 12,
-                color: 'var(--color-text-disabled)',
-                fontFamily: 'var(--font-dm-sans), sans-serif',
-                textAlign: 'center',
-                lineHeight: 1.5,
-              }}>
-                Solo gastos del período actual · Los meses cerrados no cuentan
-              </p>
-            )}
           </>
         )}
       </main>
 
       </div>{/* end max-width wrapper */}
-
-      {/* ── BOTÓN FLOTANTE "+" ── */}
-      <Link
-        href="/gastos/nuevo"
-        aria-label="Agregar nuevo gasto"
-        style={{
-          position: 'fixed', bottom: 80, right: 20,
-          width: 56, height: 56, borderRadius: 18,
-          background: 'var(--color-cta)',
-          boxShadow: '0 4px 16px rgba(0,200,81,0.35)',
-          display: 'flex', alignItems: 'center', justifyContent: 'center',
-          textDecoration: 'none', zIndex: 50,
-          transition: 'transform 120ms ease',
-        }}
-        onPointerDown={e => (e.currentTarget.style.transform = 'scale(0.93)')}
-        onPointerUp={e => (e.currentTarget.style.transform = 'scale(1)')}
-        onPointerLeave={e => (e.currentTarget.style.transform = 'scale(1)')}
-      >
-        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-          <path d="M12 5v14M5 12h14" stroke="white" strokeWidth="2.2" strokeLinecap="round" />
-        </svg>
-      </Link>
 
       <BottomNav />
 

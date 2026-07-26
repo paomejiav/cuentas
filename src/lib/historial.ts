@@ -1,5 +1,5 @@
 import { supabase } from '@/lib/supabase'
-import type { Categoria } from '@/types/database'
+import type { Categoria, MetodoPago } from '@/types/database'
 
 export interface IntegranteMin {
   id: string
@@ -173,6 +173,119 @@ export async function obtenerGastosEntreDos(
   }
 
   return gastos
+}
+
+// ── Pagos (transferencias de saldo) ──────────────────────────
+
+export interface PagoResumen {
+  id: string
+  monto: number
+  fecha: string
+  metodo: MetodoPago
+  creado_en: string
+  de: IntegranteMin
+  a: IntegranteMin
+}
+
+export interface FiltrosPagos {
+  grupoId: string
+  mes?: string
+  personaId?: string
+  cursor?: string
+  limit?: number
+}
+
+export async function obtenerPagos(filtros: FiltrosPagos): Promise<{
+  pagos: PagoResumen[]
+  hayMas: boolean
+}> {
+  const limit = filtros.limit ?? 20
+
+  let query = supabase
+    .from('pagos')
+    .select(`
+      id, monto, fecha, metodo, creado_en,
+      de:integrantes!pagos_de_integrante_id_fkey ( id, nombre, avatar_color ),
+      a:integrantes!pagos_a_integrante_id_fkey ( id, nombre, avatar_color )
+    `)
+    .eq('grupo_id', filtros.grupoId)
+    .order('fecha', { ascending: false })
+    .order('creado_en', { ascending: false })
+    .limit(limit + 1)
+
+  if (filtros.mes) {
+    const [year, month] = filtros.mes.split('-').map(Number)
+    const from = `${year}-${String(month).padStart(2, '0')}-01`
+    const lastDay = new Date(year, month, 0).getDate()
+    const to = `${year}-${String(month).padStart(2, '0')}-${lastDay}`
+    query = query.gte('fecha', from).lte('fecha', to)
+  }
+
+  if (filtros.cursor) {
+    query = query.lt('creado_en', filtros.cursor)
+  }
+
+  const { data, error } = await query
+  if (error || !data) return { pagos: [], hayMas: false }
+
+  const hayMas = data.length > limit
+  const rows = hayMas ? data.slice(0, limit) : data
+
+  let filtrados = rows
+  if (filtros.personaId) {
+    filtrados = rows.filter(p => {
+      const de = p.de as unknown as IntegranteMin
+      const a = p.a as unknown as IntegranteMin
+      return de?.id === filtros.personaId || a?.id === filtros.personaId
+    })
+  }
+
+  const pagos: PagoResumen[] = filtrados.map(p => ({
+    id:        p.id,
+    monto:     Number(p.monto),
+    fecha:     p.fecha,
+    metodo:    p.metodo as MetodoPago,
+    creado_en: p.creado_en,
+    de:        p.de as unknown as IntegranteMin,
+    a:         p.a as unknown as IntegranteMin,
+  }))
+
+  return { pagos, hayMas }
+}
+
+export async function obtenerPagosEntreDos(
+  grupoId: string,
+  miId: string,
+  otroId: string
+): Promise<PagoResumen[]> {
+  const { data, error } = await supabase
+    .from('pagos')
+    .select(`
+      id, monto, fecha, metodo, creado_en,
+      de:integrantes!pagos_de_integrante_id_fkey ( id, nombre, avatar_color ),
+      a:integrantes!pagos_a_integrante_id_fkey ( id, nombre, avatar_color )
+    `)
+    .eq('grupo_id', grupoId)
+    .order('fecha', { ascending: false })
+    .order('creado_en', { ascending: false })
+
+  if (error || !data) return []
+
+  return data
+    .filter(p => {
+      const de = p.de as unknown as IntegranteMin
+      const a = p.a as unknown as IntegranteMin
+      return (de?.id === miId && a?.id === otroId) || (de?.id === otroId && a?.id === miId)
+    })
+    .map(p => ({
+      id:        p.id,
+      monto:     Number(p.monto),
+      fecha:     p.fecha,
+      metodo:    p.metodo as MetodoPago,
+      creado_en: p.creado_en,
+      de:        p.de as unknown as IntegranteMin,
+      a:         p.a as unknown as IntegranteMin,
+    }))
 }
 
 // ── Meses disponibles ────────────────────────────────────────

@@ -4,7 +4,7 @@
 // ============================================================
 
 export type Categoria =
-  | 'comida' | 'transporte' | 'regalo' | 'cumpleanos'
+  | 'super' | 'comida' | 'transporte' | 'regalo' | 'cumpleanos'
   | 'tragos' | 'entretenimiento' | 'otro'
 
 export type MetodoPago = 'transferencia' | 'efectivo' | 'otro'
@@ -188,6 +188,7 @@ export interface FormCuentaCompartida {
 // ============================================================
 
 export const CATEGORIA_EMOJI: Record<Categoria, string> = {
+  super:           '🛒',
   comida:          '🍕',
   transporte:      '🚌',
   regalo:          '🎁',
@@ -198,6 +199,7 @@ export const CATEGORIA_EMOJI: Record<Categoria, string> = {
 }
 
 export const CATEGORIA_LABEL: Record<Categoria, string> = {
+  super:           'Súper',
   comida:          'Comida y salidas',
   transporte:      'Transporte',
   regalo:          'Regalo',

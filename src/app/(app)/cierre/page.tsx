@@ -13,6 +13,7 @@ import { formatCLP } from '@/lib/format'
 import { Avatar } from '@/components/app/Avatar'
 import { BottomNav } from '@/components/app/BottomNav'
 import { Toast } from '@/components/app/Toast'
+import { RegistrarPago } from '@/components/app/RegistrarPago'
 import { CATEGORIA_EMOJI, CATEGORIA_LABEL, type Categoria } from '@/types/database'
 import { supabase } from '@/lib/supabase'
 
@@ -25,8 +26,8 @@ function SectionTitle({ children }: { children: React.ReactNode }) {
   return (
     <p style={{
       margin: '0 4px 10px',
-      fontSize: 11, fontWeight: 600,
-      color: 'var(--color-text-secondary)',
+      fontSize: 11, fontWeight: 700,
+      color: 'var(--color-text-muted)',
       fontFamily: 'var(--font-dm-sans), sans-serif',
       textTransform: 'uppercase', letterSpacing: '0.08em',
     }}>
@@ -39,7 +40,8 @@ function Card({ children, style }: { children: React.ReactNode; style?: React.CS
   return (
     <div style={{
       background: 'var(--color-card)',
-      borderRadius: 20, padding: '16px 18px',
+      border: '1px solid var(--color-border)',
+      borderRadius: 18, padding: '16px 18px',
       ...style,
     }}>
       {children}
@@ -59,12 +61,13 @@ function BtnPrimario({ onClick, disabled, loading, children }: {
       onClick={onClick}
       disabled={disabled || loading}
       style={{
-        width: '100%', height: 56, borderRadius: 100,
-        background: (disabled || loading) ? 'var(--color-text-disabled)' : 'var(--color-cta)',
-        color: 'white', border: 'none',
-        fontSize: 16, fontWeight: 600,
+        width: '100%', height: 54, borderRadius: 15, border: 'none',
+        background: (disabled || loading) ? 'var(--color-text-disabled)' : 'var(--gradient-cta)',
+        color: 'white',
+        fontSize: 15.5, fontWeight: 700,
         fontFamily: 'var(--font-dm-sans), sans-serif',
         cursor: (disabled || loading) ? 'not-allowed' : 'pointer',
+        boxShadow: (disabled || loading) ? 'none' : 'var(--shadow-cta)',
         transition: 'all 120ms ease',
         marginTop: 8,
       }}
@@ -83,18 +86,39 @@ function PasoIndicador({ paso, total = 4 }: { paso: Paso; total?: number }) {
   return (
     <div style={{ display: 'flex', gap: 5, alignItems: 'center' }}>
       {Array.from({ length: total }, (_, i) => i + 1).map(n => (
-        <div key={n} style={{
-          height: 6, borderRadius: 3,
-          width: n === paso ? 24 : 8,
-          background: n < paso
-            ? 'var(--color-cta)'
-            : n === paso
-            ? 'var(--color-cta)'
-            : 'var(--color-border)',
-          opacity: n < paso ? 0.5 : 1,
+        <span key={n} style={{
+          height: 5, borderRadius: 3,
+          width: n === paso ? 22 : 10,
+          background: n <= paso ? 'var(--color-cta)' : '#DEDEE6',
           transition: 'all 250ms ease',
         }} />
       ))}
+    </div>
+  )
+}
+
+// ── Donut de progreso ────────────────────────────────────────
+
+function DonutProgreso({ pct }: { pct: number }) {
+  const r = 24
+  const circ = 2 * Math.PI * r
+  const offset = circ * (1 - Math.min(100, Math.max(0, pct)) / 100)
+  return (
+    <div style={{ position: 'relative', width: 56, height: 56, flexShrink: 0 }}>
+      <svg width="56" height="56" viewBox="0 0 56 56">
+        <circle cx="28" cy="28" r={r} fill="none" stroke="var(--color-track)" strokeWidth="7" />
+        <circle
+          cx="28" cy="28" r={r} fill="none" stroke="var(--color-cta)" strokeWidth="7"
+          strokeLinecap="round" strokeDasharray={circ} strokeDashoffset={offset}
+          transform="rotate(-90 28 28)"
+        />
+      </svg>
+      <div style={{
+        position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center',
+        fontFamily: 'var(--font-sora), sans-serif', fontSize: 14, fontWeight: 800, color: 'var(--color-cta)',
+      }}>
+        {Math.round(pct)}%
+      </div>
     </div>
   )
 }
@@ -114,8 +138,8 @@ function Paso1({
   if (cargando) {
     return (
       <div style={{ display: 'flex', flexDirection: 'column', gap: 12, padding: '0 var(--page-px)' }}>
-        {[80, 120, 200].map((h, i) => (
-          <div key={i} style={{ height: h, background: 'var(--color-card)', borderRadius: 20 }} />
+        {[52, 100, 180].map((h, i) => (
+          <div key={i} className="skeleton" style={{ height: h, borderRadius: 18 }} />
         ))}
       </div>
     )
@@ -131,10 +155,10 @@ function Paso1({
           onChange={e => setMes(e.target.value)}
           style={{
             width: '100%', height: 52,
-            background: 'var(--color-card-light)',
-            border: 'none', borderRadius: 14,
-            padding: '0 16px',
-            fontSize: 15, fontWeight: 600,
+            background: 'var(--color-surface-white)',
+            border: '1px solid var(--color-border)', borderRadius: 14,
+            padding: '0 15px',
+            fontSize: 14.5, fontWeight: 600,
             color: 'var(--color-text-primary)',
             fontFamily: 'var(--font-dm-sans), sans-serif',
             appearance: 'none',
@@ -148,7 +172,7 @@ function Paso1({
       </div>
 
       {resumen?.yaCerrado && (
-        <Card style={{ background: '#FFF3CD' }}>
+        <Card style={{ background: '#FFF3CD', border: 'none' }}>
           <p style={{ margin: 0, fontSize: 14, fontWeight: 500, color: '#633806', fontFamily: 'var(--font-dm-sans), sans-serif' }}>
             ⚠️ Este mes ya fue cerrado anteriormente.
           </p>
@@ -158,10 +182,10 @@ function Paso1({
       {/* Total del mes */}
       {resumen && (
         <Card>
-          <p style={{ margin: 0, fontSize: 11, fontWeight: 600, color: 'var(--color-text-secondary)', fontFamily: 'var(--font-dm-sans), sans-serif', textTransform: 'uppercase', letterSpacing: '0.07em' }}>
+          <p style={{ margin: 0, fontSize: 11, fontWeight: 700, color: 'var(--color-text-muted)', fontFamily: 'var(--font-dm-sans), sans-serif', textTransform: 'uppercase', letterSpacing: '0.07em' }}>
             Total gastado — {formatearMesLabel(mes)}
           </p>
-          <p style={{ margin: '6px 0 0', fontSize: 36, fontWeight: 700, color: 'var(--color-text-primary)', fontFamily: 'var(--font-lora), serif' }}>
+          <p style={{ margin: '6px 0 0', fontSize: 32, fontWeight: 800, color: 'var(--color-text-primary)', fontFamily: 'var(--font-sora), sans-serif', letterSpacing: '-0.02em' }}>
             {formatCLP(resumen.totalGastado)}
           </p>
           <p style={{ margin: '4px 0 0', fontSize: 13, color: 'var(--color-text-secondary)', fontFamily: 'var(--font-dm-sans), sans-serif' }}>
@@ -174,35 +198,33 @@ function Paso1({
       {resumen && resumen.saldos.length > 0 && (
         <div>
           <SectionTitle>Balance por persona</SectionTitle>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-            {resumen.saldos.map(s => (
+          <div style={{ background: 'var(--color-card)', border: '1px solid var(--color-border)', borderRadius: 18, padding: '4px 16px' }}>
+            {resumen.saldos.map((s, i) => (
               <div key={s.integrante.id} style={{
-                background: 'var(--color-card)',
-                borderRadius: 16, padding: '12px 16px',
-                display: 'flex', alignItems: 'center', gap: 12,
+                display: 'flex', alignItems: 'center', gap: 12, padding: '13px 0',
+                borderBottom: i === resumen.saldos.length - 1 ? 'none' : '1px solid var(--color-divider)',
               }}>
                 <Avatar nombre={s.integrante.nombre} color={s.integrante.avatar_color} size={38} />
                 <div style={{ flex: 1, minWidth: 0 }}>
-                  <p style={{ margin: 0, fontSize: 14, fontWeight: 600, color: 'var(--color-text-primary)', fontFamily: 'var(--font-dm-sans), sans-serif' }}>
+                  <p style={{ margin: 0, fontSize: 14, fontWeight: 700, color: 'var(--color-text-primary)', fontFamily: 'var(--font-dm-sans), sans-serif' }}>
                     {s.integrante.nombre}
                   </p>
-                  <p style={{ margin: '2px 0 0', fontSize: 12, color: 'var(--color-text-secondary)', fontFamily: 'var(--font-dm-sans), sans-serif' }}>
+                  <p style={{ margin: '1px 0 0', fontSize: 11.5, color: 'var(--color-text-muted)', fontFamily: 'var(--font-dm-sans), sans-serif' }}>
                     Pagó {formatCLP(s.pago)} · Le toca {formatCLP(s.corresponde)}
                   </p>
                 </div>
                 <div style={{ textAlign: 'right', flexShrink: 0 }}>
                   <p style={{
-                    margin: 0, fontSize: 15, fontWeight: 700,
+                    margin: 0, fontFamily: 'var(--font-sora), sans-serif', fontSize: 15, fontWeight: 700,
                     color: s.neto === 0
                       ? 'var(--color-text-secondary)'
                       : s.neto > 0
                       ? 'var(--color-positive)'
                       : 'var(--color-negative)',
-                    fontFamily: 'var(--font-dm-sans), sans-serif',
                   }}>
                     {s.neto === 0 ? '✓' : s.neto > 0 ? `+${formatCLP(s.neto)}` : `−${formatCLP(-s.neto)}`}
                   </p>
-                  <p style={{ margin: '1px 0 0', fontSize: 11, color: 'var(--color-text-secondary)', fontFamily: 'var(--font-dm-sans), sans-serif' }}>
+                  <p style={{ margin: '1px 0 0', fontSize: 11, color: 'var(--color-text-muted)', fontFamily: 'var(--font-dm-sans), sans-serif' }}>
                     {s.neto === 0 ? 'Al día' : s.neto > 0 ? 'le deben' : 'debe'}
                   </p>
                 </div>
@@ -218,7 +240,7 @@ function Paso1({
           <SectionTitle>Por categoría</SectionTitle>
           <Card style={{ padding: '14px 18px' }}>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-              {resumen.porCategoria.map(c => (
+              {resumen.porCategoria.map((c: { categoria: Categoria; total: number; porcentaje: number }) => (
                 <div key={c.categoria}>
                   <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 5 }}>
                     <span style={{ fontSize: 13, fontFamily: 'var(--font-dm-sans), sans-serif', color: 'var(--color-text-primary)' }}>
@@ -228,13 +250,10 @@ function Paso1({
                       {formatCLP(c.total)} <span style={{ fontWeight: 400, color: 'var(--color-text-secondary)' }}>({c.porcentaje}%)</span>
                     </span>
                   </div>
-                  {/* Barra */}
-                  <div style={{ height: 6, background: 'var(--color-border)', borderRadius: 3, overflow: 'hidden' }}>
+                  <div style={{ height: 6, background: 'var(--color-track)', borderRadius: 3, overflow: 'hidden' }}>
                     <div style={{
-                      height: '100%',
-                      width: `${c.porcentaje}%`,
-                      background: 'var(--color-cta)',
-                      borderRadius: 3,
+                      height: '100%', width: `${c.porcentaje}%`,
+                      background: 'var(--color-cta)', borderRadius: 3,
                       transition: 'width 600ms ease',
                     }} />
                   </div>
@@ -299,9 +318,9 @@ function Paso2({
             style={{
               display: 'flex', alignItems: 'flex-start', gap: 16,
               padding: '18px 18px',
-              borderRadius: 20,
-              border: activo ? '2px solid var(--color-cta)' : '2px solid transparent',
-              background: activo ? 'white' : 'var(--color-card)',
+              borderRadius: 18,
+              border: activo ? '2px solid var(--color-cta)' : '1px solid var(--color-border)',
+              background: activo ? 'var(--tint-cta)' : 'var(--color-surface-white)',
               cursor: 'pointer', textAlign: 'left',
               transition: 'all 150ms ease',
               WebkitTapHighlightColor: 'transparent',
@@ -309,7 +328,7 @@ function Paso2({
           >
             <span style={{ fontSize: 32, flexShrink: 0 }}>{op.emoji}</span>
             <div>
-              <p style={{ margin: 0, fontSize: 16, fontWeight: 700, color: 'var(--color-text-primary)', fontFamily: 'var(--font-lora), serif' }}>
+              <p style={{ margin: 0, fontSize: 16, fontWeight: 700, color: 'var(--color-text-primary)', fontFamily: 'var(--font-sora), sans-serif' }}>
                 {op.titulo}
               </p>
               <p style={{ margin: '6px 0 0', fontSize: 13, color: 'var(--color-text-secondary)', fontFamily: 'var(--font-dm-sans), sans-serif', lineHeight: 1.5 }}>
@@ -343,58 +362,50 @@ function Paso2({
 // ── PASO 3: Marcar pagos ──────────────────────────────────────
 
 function Paso3({
-  transferencias,
-  setTransferencias,
-  onSiguiente,
+  transferencias, setTransferencias, totalGastado, miId, onSiguiente,
 }: {
   transferencias: TransferenciaCierre[]
   setTransferencias: React.Dispatch<React.SetStateAction<TransferenciaCierre[]>>
+  totalGastado: number
+  miId: string
   onSiguiente: () => void
 }) {
-  const pagadas = transferencias.filter(t => t.pagado).length
+  const [pagando, setPagando] = useState<TransferenciaCierre | null>(null)
 
-  function togglePagado(id: string) {
-    setTransferencias(prev => prev.map(t => t.id === id ? { ...t, pagado: !t.pagado } : t))
+  const montoTotal = transferencias.reduce((s, t) => s + t.monto, 0)
+  const montoPagado = transferencias.filter(t => t.pagado).reduce((s, t) => s + t.monto, 0)
+  const pctPagado = montoTotal > 0 ? (montoPagado / montoTotal) * 100 : 100
+
+  function desmarcar(id: string) {
+    setTransferencias(prev => prev.map(t => t.id === id ? { ...t, pagado: false } : t))
   }
 
-  function setFecha(id: string, fecha: string) {
-    setTransferencias(prev => prev.map(t => t.id === id ? { ...t, fecha } : t))
+  function confirmarPago(fecha: string, metodo: TransferenciaCierre['metodo']) {
+    if (!pagando) return
+    setTransferencias(prev => prev.map(t => t.id === pagando.id ? { ...t, pagado: true, fecha, metodo } : t))
+    setPagando(null)
   }
-
-  function setMetodo(id: string, metodo: string) {
-    setTransferencias(prev => prev.map(t => t.id === id ? { ...t, metodo: metodo as TransferenciaCierre['metodo'] } : t))
-  }
-
-  const metodos = [
-    { id: 'transferencia', label: '🏦 Transferencia' },
-    { id: 'efectivo',      label: '💵 Efectivo'      },
-    { id: 'otro',          label: '📱 Otro'           },
-  ]
 
   return (
     <div style={{ padding: '0 var(--page-px)', display: 'flex', flexDirection: 'column', gap: 16 }}>
-      {/* Progreso */}
-      <Card style={{ padding: '14px 18px' }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
-          <p style={{ margin: 0, fontSize: 13, fontWeight: 600, color: 'var(--color-text-primary)', fontFamily: 'var(--font-dm-sans), sans-serif' }}>
-            Progreso
-          </p>
-          <p style={{ margin: 0, fontSize: 13, fontWeight: 700, color: 'var(--color-cta)', fontFamily: 'var(--font-dm-sans), sans-serif' }}>
-            {pagadas} / {transferencias.length}
-          </p>
-        </div>
-        <div style={{ height: 8, background: 'var(--color-border)', borderRadius: 4, overflow: 'hidden' }}>
-          <div style={{
-            height: '100%',
-            width: transferencias.length > 0 ? `${(pagadas / transferencias.length) * 100}%` : '0%',
-            background: 'var(--color-cta)',
-            borderRadius: 4,
-            transition: 'width 400ms ease',
-          }} />
-        </div>
-      </Card>
+      {transferencias.length > 0 && (
+        <Card style={{ padding: '16px 18px', display: 'flex', alignItems: 'center', gap: 14 }}>
+          <DonutProgreso pct={pctPagado} />
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <p style={{ margin: 0, fontSize: 12, color: 'var(--color-neutral)', fontFamily: 'var(--font-dm-sans), sans-serif' }}>
+              Saldado del período
+            </p>
+            <p style={{ margin: '2px 0 0', fontFamily: 'var(--font-sora), sans-serif', fontSize: 22, fontWeight: 800, letterSpacing: '-0.02em', color: 'var(--color-text-primary)' }}>
+              {formatCLP(montoPagado)}
+            </p>
+            <p style={{ margin: '2px 0 0', fontSize: 11.5, color: 'var(--color-text-muted)', fontFamily: 'var(--font-dm-sans), sans-serif' }}>
+              de {formatCLP(totalGastado)} total
+            </p>
+          </div>
+        </Card>
+      )}
 
-      <SectionTitle>Transferencias a realizar</SectionTitle>
+      <SectionTitle>Transferencias sugeridas</SectionTitle>
 
       {transferencias.length === 0 && (
         <Card>
@@ -406,103 +417,65 @@ function Paso3({
 
       {transferencias.map(t => (
         <div key={t.id} style={{
-          background: t.pagado ? 'var(--color-card)' : 'white',
-          borderRadius: 20,
-          border: t.pagado ? 'none' : '2px solid var(--color-border)',
-          overflow: 'hidden',
-          opacity: t.pagado ? 0.75 : 1,
+          background: 'var(--color-surface-white)',
+          borderRadius: 18,
+          border: t.pagado ? '1px solid var(--color-border)' : '1.6px solid var(--color-border)',
+          padding: '16px',
+          opacity: t.pagado ? 0.7 : 1,
           transition: 'all 200ms ease',
         }}>
-          {/* Fila principal */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+            <Avatar nombre={t.de.nombre} color={t.de.avatar_color} size={38} />
+            <svg width="26" height="16" viewBox="0 0 26 16" fill="none" style={{ flexShrink: 0 }}>
+              <path d="M2 8h20m0 0l-5-5m5 5l-5 5" stroke="var(--color-text-disabled)" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
+            </svg>
+            <Avatar nombre={t.a.nombre} color={t.a.avatar_color} size={38} />
+            <div style={{ flex: 1, marginLeft: 4, minWidth: 0 }}>
+              <p style={{ margin: 0, fontSize: 13, color: 'var(--color-text-secondary)', fontFamily: 'var(--font-dm-sans), sans-serif' }}>
+                <b style={{ color: 'var(--color-text-primary)' }}>{t.de.nombre}</b> le paga a <b style={{ color: 'var(--color-text-primary)' }}>{t.a.nombre}</b>
+              </p>
+              <p style={{ margin: '1px 0 0', fontFamily: 'var(--font-sora), sans-serif', fontSize: 16, fontWeight: 800, letterSpacing: '-0.01em', color: 'var(--color-text-primary)' }}>
+                {formatCLP(t.monto)}
+              </p>
+            </div>
+          </div>
+
           <button
-            onClick={() => togglePagado(t.id)}
+            onClick={() => t.pagado ? desmarcar(t.id) : setPagando(t)}
             style={{
-              display: 'flex', alignItems: 'center', gap: 14,
-              padding: '16px 18px', width: '100%',
-              border: 'none', background: 'transparent',
-              cursor: 'pointer', textAlign: 'left',
-              WebkitTapHighlightColor: 'transparent',
+              width: '100%', height: 44, borderRadius: 12, border: 'none',
+              display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 7,
+              marginTop: 14, cursor: 'pointer',
+              background: t.pagado ? 'var(--color-card-light)' : 'var(--tint-cta)',
             }}
           >
-            {/* Checkbox */}
-            <div style={{
-              width: 24, height: 24, borderRadius: 8, flexShrink: 0,
-              border: t.pagado ? 'none' : '2px solid var(--color-border)',
-              background: t.pagado ? 'var(--color-cta)' : 'transparent',
-              display: 'flex', alignItems: 'center', justifyContent: 'center',
-              transition: 'all 200ms ease',
-            }}>
-              {t.pagado && (
-                <svg width="13" height="13" viewBox="0 0 13 13" fill="none">
-                  <path d="M2 6.5l3.5 3.5 5.5-6" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
-                </svg>
-              )}
-            </div>
-
-            {/* Avatares + flecha */}
-            <div style={{ display: 'flex', alignItems: 'center', gap: 6, flex: 1, minWidth: 0 }}>
-              <Avatar nombre={t.de.nombre} color={t.de.avatar_color} size={34} />
-              <svg width="16" height="16" viewBox="0 0 16 16" fill="none" style={{ flexShrink: 0 }}>
-                <path d="M4 8h8M9 5l3 3-3 3" stroke="var(--color-text-secondary)" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
-              </svg>
-              <Avatar nombre={t.a.nombre} color={t.a.avatar_color} size={34} />
-              <div style={{ marginLeft: 4, minWidth: 0 }}>
-                <p style={{ margin: 0, fontSize: 13, fontWeight: 600, color: 'var(--color-text-primary)', fontFamily: 'var(--font-dm-sans), sans-serif', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                  {t.de.nombre} → {t.a.nombre}
-                </p>
-                <p style={{ margin: '2px 0 0', fontSize: 16, fontWeight: 700, color: t.pagado ? 'var(--color-positive)' : 'var(--color-text-primary)', fontFamily: 'var(--font-dm-sans), sans-serif' }}>
-                  {formatCLP(t.monto)}
-                </p>
-              </div>
-            </div>
+            {t.pagado ? (
+              <>
+                <svg width="16" height="16" viewBox="0 0 20 20" fill="none"><path d="M4 12l5 5 11-11" stroke="var(--color-positive)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" /></svg>
+                <span style={{ fontSize: 13.5, fontWeight: 700, color: 'var(--color-positive)' }}>Saldado · toca para deshacer</span>
+              </>
+            ) : (
+              <>
+                <svg width="16" height="16" viewBox="0 0 20 20" fill="none"><path d="M4 10l4 4 8-9" stroke="var(--color-cta-dark)" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" /></svg>
+                <span style={{ fontSize: 13.5, fontWeight: 700, color: 'var(--color-cta-dark)' }}>Marcar como saldado</span>
+              </>
+            )}
           </button>
-
-          {/* Campos adicionales si está marcado como pagado */}
-          {t.pagado && (
-            <div style={{
-              padding: '0 18px 16px',
-              display: 'flex', gap: 10,
-              borderTop: '1px solid var(--color-border)',
-              paddingTop: 12,
-            }}>
-              <input
-                type="date"
-                value={t.fecha}
-                onChange={e => setFecha(t.id, e.target.value)}
-                style={{
-                  flex: 1, height: 42,
-                  background: 'var(--color-card-light)',
-                  border: 'none', borderRadius: 12,
-                  padding: '0 12px',
-                  fontSize: 13, fontFamily: 'var(--font-dm-sans), sans-serif',
-                  color: 'var(--color-text-primary)', outline: 'none',
-                }}
-              />
-              <select
-                value={t.metodo}
-                onChange={e => setMetodo(t.id, e.target.value)}
-                style={{
-                  flex: 1, height: 42,
-                  background: 'var(--color-card-light)',
-                  border: 'none', borderRadius: 12,
-                  padding: '0 12px',
-                  fontSize: 13, fontFamily: 'var(--font-dm-sans), sans-serif',
-                  color: 'var(--color-text-primary)', outline: 'none',
-                  appearance: 'none',
-                }}
-              >
-                {metodos.map(m => (
-                  <option key={m.id} value={m.id}>{m.label}</option>
-                ))}
-              </select>
-            </div>
-          )}
         </div>
       ))}
 
       <BtnPrimario onClick={onSiguiente}>
         Revisar y confirmar →
       </BtnPrimario>
+
+      {pagando && (
+        <RegistrarPago
+          transferencia={pagando}
+          miId={miId}
+          onCerrar={() => setPagando(null)}
+          onConfirmar={confirmarPago}
+        />
+      )}
     </div>
   )
 }
@@ -526,7 +499,7 @@ function Paso4({
       {/* Resumen visual */}
       <Card style={{ textAlign: 'center', padding: '24px 20px' }}>
         <div style={{ fontSize: 40, marginBottom: 8 }}>📅</div>
-        <h2 style={{ margin: 0, fontSize: 20, fontWeight: 700, color: 'var(--color-text-primary)', fontFamily: 'var(--font-lora), serif' }}>
+        <h2 style={{ margin: 0, fontSize: 19, fontWeight: 700, color: 'var(--color-text-primary)', fontFamily: 'var(--font-sora), sans-serif' }}>
           Cierre de {formatearMesLabel(mes)}
         </h2>
         <p style={{ margin: '8px 0 0', fontSize: 13, color: 'var(--color-text-secondary)', fontFamily: 'var(--font-dm-sans), sans-serif' }}>
@@ -538,12 +511,11 @@ function Paso4({
       {pagadas.length > 0 && (
         <div>
           <SectionTitle>Pagos registrados ({pagadas.length})</SectionTitle>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-            {pagadas.map(t => (
+          <div style={{ background: 'var(--color-card)', border: '1px solid var(--color-border)', borderRadius: 18, padding: '4px 16px' }}>
+            {pagadas.map((t, i) => (
               <div key={t.id} style={{
-                background: 'var(--color-card)',
-                borderRadius: 16, padding: '12px 16px',
                 display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                padding: '12px 0', borderBottom: i === pagadas.length - 1 ? 'none' : '1px solid var(--color-divider)',
               }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                   <span style={{ fontSize: 16 }}>✅</span>
@@ -561,22 +533,18 @@ function Paso4({
       )}
 
       {pendientes.length > 0 && (
-        <Card style={{ background: '#FFF9E6' }}>
+        <Card style={{ background: '#FFF9E6', border: 'none' }}>
           <p style={{ margin: 0, fontSize: 13, color: '#7A5C00', fontFamily: 'var(--font-dm-sans), sans-serif' }}>
             ⏳ <strong>{pendientes.length} transferencia{pendientes.length > 1 ? 's' : ''}</strong> quedarán pendientes pero el mes igual se cerrará. Los saldos se resetearán.
           </p>
         </Card>
       )}
 
-      <div style={{
-        background: 'var(--color-card)',
-        borderRadius: 20, padding: '16px 18px',
-        border: '2px solid var(--color-border)',
-      }}>
+      <Card>
         <p style={{ margin: 0, fontSize: 13, color: 'var(--color-text-secondary)', fontFamily: 'var(--font-dm-sans), sans-serif', lineHeight: 1.6 }}>
           Al confirmar, todos los gastos de <strong style={{ color: 'var(--color-text-primary)' }}>{formatearMesLabel(mes)}</strong> quedarán archivados y los saldos volverán a cero. Esta acción no se puede deshacer.
         </p>
-      </div>
+      </Card>
 
       <BtnPrimario onClick={onConfirmar} loading={cerrando}>
         {cerrando ? 'Cerrando el mes…' : `Cerrar ${formatearMesLabel(mes)} ✓`}
@@ -593,24 +561,23 @@ function CierresAnteriores({ cierres }: { cierres: CierreHistorial[] }) {
   return (
     <div style={{ padding: '0 var(--page-px)', marginTop: 8 }}>
       <SectionTitle>Meses cerrados anteriores</SectionTitle>
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-        {cierres.map(c => {
+      <div style={{ background: 'var(--color-card)', border: '1px solid var(--color-border)', borderRadius: 18, padding: '4px 16px' }}>
+        {cierres.map((c, i) => {
           const fechaCierre = new Date(c.cerrado_en).toLocaleDateString('es-CL', { day: 'numeric', month: 'short', year: 'numeric' })
           return (
             <div key={c.id} style={{
-              background: 'var(--color-card)',
-              borderRadius: 16, padding: '12px 16px',
               display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+              padding: '12px 0', borderBottom: i === cierres.length - 1 ? 'none' : '1px solid var(--color-divider)',
             }}>
               <div>
                 <p style={{ margin: 0, fontSize: 14, fontWeight: 600, color: 'var(--color-text-primary)', fontFamily: 'var(--font-dm-sans), sans-serif' }}>
                   {formatearMesLabel(c.mes)}
                 </p>
-                <p style={{ margin: '2px 0 0', fontSize: 12, color: 'var(--color-text-secondary)', fontFamily: 'var(--font-dm-sans), sans-serif' }}>
+                <p style={{ margin: '2px 0 0', fontSize: 12, color: 'var(--color-text-muted)', fontFamily: 'var(--font-dm-sans), sans-serif' }}>
                   Cerrado el {fechaCierre}
                 </p>
               </div>
-              <p style={{ margin: 0, fontSize: 15, fontWeight: 700, color: 'var(--color-text-primary)', fontFamily: 'var(--font-dm-sans), sans-serif' }}>
+              <p style={{ margin: 0, fontFamily: 'var(--font-sora), sans-serif', fontSize: 15, fontWeight: 700, color: 'var(--color-text-primary)' }}>
                 {formatCLP(c.total_gastado)}
               </p>
             </div>
@@ -737,17 +704,19 @@ export default function CierrePage() {
   if (sesionLoading || !sesion) return null
 
   return (
-    <div style={{ minHeight: '100vh', background: 'var(--color-bg)', paddingBottom: 80 }}>
+    <div style={{ minHeight: '100vh', background: 'var(--color-bg)', paddingBottom: 96 }}>
       <div style={{ maxWidth: 640, margin: '0 auto' }}>
 
       {/* Header */}
-      <header style={{ padding: '56px var(--page-px) 20px', display: 'flex', alignItems: 'center', gap: 12 }}>
+      <header style={{ padding: '56px var(--page-px) 18px', display: 'flex', alignItems: 'center', gap: 12 }}>
         {paso > 1 ? (
           <button
             onClick={() => { setPaso(p => (p - 1) as Paso); window.scrollTo(0, 0) }}
+            aria-label="Volver"
             style={{
-              background: 'var(--color-card)', border: 'none', borderRadius: 12,
-              width: 40, height: 40, display: 'flex', alignItems: 'center', justifyContent: 'center',
+              background: 'var(--color-surface-white)', border: '1px solid var(--color-border)',
+              borderRadius: 13, width: 42, height: 42, padding: 0,
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
               cursor: 'pointer', flexShrink: 0,
             }}
           >
@@ -756,29 +725,32 @@ export default function CierrePage() {
             </svg>
           </button>
         ) : (
-          <div style={{ width: 40, flexShrink: 0 }} />
+          <div style={{ width: 42, flexShrink: 0 }} />
         )}
 
         <div style={{ flex: 1, minWidth: 0 }}>
-          <p style={{
-            margin: 0, fontSize: 12, fontWeight: 600,
-            color: 'var(--color-text-secondary)',
-            fontFamily: 'var(--font-dm-sans), sans-serif',
-            textTransform: 'uppercase', letterSpacing: '0.08em',
-          }}>
-            Paso {paso} de 4
-          </p>
           <h1 style={{
-            margin: '2px 0 0', fontSize: 22, fontWeight: 700,
+            margin: 0, fontSize: paso === 1 ? 23 : 19, fontWeight: 700,
             color: 'var(--color-text-primary)',
-            fontFamily: 'var(--font-lora), serif',
+            fontFamily: 'var(--font-sora), sans-serif', letterSpacing: '-0.01em',
           }}>
-            {titulosPasos[paso - 1]}
+            {paso === 1 ? 'Cierre de cuentas' : titulosPasos[paso - 1]}
           </h1>
+          {paso > 1 && (
+            <p style={{ margin: '1px 0 0', fontSize: 12, color: 'var(--color-neutral)', fontFamily: 'var(--font-dm-sans), sans-serif' }}>
+              Paso {paso} de 4
+            </p>
+          )}
         </div>
 
         <PasoIndicador paso={paso} />
       </header>
+
+      {paso === 1 && resumen && !resumen.yaCerrado && resumen.gastoIds.length > 0 && (
+        <p style={{ padding: '0 var(--page-px)', margin: '0 0 16px', fontSize: 13, color: 'var(--color-text-secondary)', fontFamily: 'var(--font-dm-sans), sans-serif' }}>
+          Simplificamos las deudas al mínimo de transferencias posibles.
+        </p>
+      )}
 
       {/* Contenido por paso */}
       {paso === 1 && (
@@ -801,10 +773,12 @@ export default function CierrePage() {
         <Paso2 modo={modo} setModo={setModo} onSiguiente={handlePaso2Siguiente} />
       )}
 
-      {paso === 3 && (
+      {paso === 3 && resumen && (
         <Paso3
           transferencias={transferencias}
           setTransferencias={setTransferencias}
+          totalGastado={resumen.totalGastado}
+          miId={sesion.integrante_id}
           onSiguiente={handlePaso3Siguiente}
         />
       )}

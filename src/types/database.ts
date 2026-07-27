@@ -5,7 +5,7 @@
 
 export type Categoria =
   | 'super' | 'comida' | 'transporte' | 'regalo' | 'cumpleanos'
-  | 'tragos' | 'entretenimiento' | 'otro'
+  | 'tragos' | 'otro'
 
 export type MetodoPago = 'transferencia' | 'efectivo' | 'otro'
 
@@ -194,7 +194,6 @@ export const CATEGORIA_EMOJI: Record<Categoria, string> = {
   regalo:          '🎁',
   cumpleanos:      '🎂',
   tragos:          '🍻',
-  entretenimiento: '🎬',
   otro:            '📦',
 }
 
@@ -205,7 +204,6 @@ export const CATEGORIA_LABEL: Record<Categoria, string> = {
   regalo:          'Regalo',
   cumpleanos:      'Cumpleaños',
   tragos:          'Tragos / bar',
-  entretenimiento: 'Entretenimiento',
   otro:            'Otro',
 }
 

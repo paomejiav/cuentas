@@ -23,7 +23,6 @@ const CATEGORIA_TINT: Record<Categoria, string> = {
   regalo:          'var(--tint-cta)',
   cumpleanos:      '#FEF0E5',
   tragos:          'var(--tint-cta)',
-  entretenimiento: '#E6F6FD',
   otro:            'var(--color-icon-bg)',
 }
 

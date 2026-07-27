@@ -17,7 +17,6 @@ const CATEGORIAS: { id: Categoria; emoji: string; label: string }[] = [
   { id: 'comida',          emoji: '🍕', label: 'Comida'       },
   { id: 'transporte',      emoji: '🚌', label: 'Transporte'   },
   { id: 'tragos',          emoji: '🍻', label: 'Tragos'       },
-  { id: 'entretenimiento', emoji: '🎬', label: 'Entretención' },
   { id: 'regalo',          emoji: '🎁', label: 'Regalo'       },
   { id: 'cumpleanos',      emoji: '🎂', label: 'Cumpleaños'   },
   { id: 'otro',            emoji: '📦', label: 'Otro'         },

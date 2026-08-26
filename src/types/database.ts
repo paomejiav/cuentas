@@ -7,7 +7,7 @@ export type Categoria =
   | 'super' | 'comida' | 'transporte' | 'regalo' | 'cumpleanos'
   | 'tragos' | 'otro'
 
-export type MetodoPago = 'transferencia' | 'efectivo' | 'otro'
+export type MetodoPago = 'transferencia' | 'efectivo' | 'otro' | 'cancelacion_cadena'
 
 // ============================================================
 // Tablas base
@@ -208,9 +208,10 @@ export const CATEGORIA_LABEL: Record<Categoria, string> = {
 }
 
 export const METODO_LABEL: Record<MetodoPago, string> = {
-  transferencia: 'Transferencia',
-  efectivo:      'Efectivo',
-  otro:          'Otro',
+  transferencia:      'Transferencia',
+  efectivo:           'Efectivo',
+  otro:               'Otro',
+  cancelacion_cadena: 'Cancelación de cadena',
 }
 
 export const AVATAR_COLORS = [

@@ -1,321 +1,205 @@
 import { supabase } from '@/lib/supabase'
 import type { Categoria, MetodoPago } from '@/types/database'
+import type { UsuarioMini } from '@/lib/cuentas'
 
-export interface IntegranteMin {
-  id: string
-  nombre: string
-  avatar_color: string
-}
+// ── Tipos ─────────────────────────────────────────────────────
 
-export interface DivisionDetalle {
-  integrante: IntegranteMin
+export interface DivisionHistorial {
+  usuario: UsuarioMini | null
   monto_asignado: number
 }
 
-export interface GastoResumen {
+export interface GastoHistorial {
   id: string
   descripcion: string
   monto_total: number
   categoria: Categoria
   fecha: string
-  mes_cierre: string | null
   creado_en: string
-  pagador: IntegranteMin
-  mi_division: number        // monto asignado al usuario actual (0 si no participa)
-  divisiones: DivisionDetalle[]
+  cuenta_id: string | null
+  cuenta_nombre: string | null
+  pagado_por: string
+  pagador: UsuarioMini | null
+  divisiones: DivisionHistorial[]
 }
 
-export interface FiltrosHistorial {
-  grupoId: string
-  miId: string
-  mes?: string              // 'YYYY-MM'
-  categoria?: Categoria
-  personaId?: string        // filtrar gastos donde esta persona pagó o participó
-  cursor?: string           // creado_en del último ítem (para paginación)
-  limit?: number
-}
-
-// ── Query principal ──────────────────────────────────────────
-
-export async function obtenerGastos(filtros: FiltrosHistorial): Promise<{
-  gastos: GastoResumen[]
-  hayMas: boolean
-}> {
-  const limit = filtros.limit ?? 20
-
-  let query = supabase
-    .from('gastos')
-    .select(`
-      id, descripcion, monto_total, categoria, fecha, mes_cierre, creado_en,
-      pagador:integrantes!gastos_pagado_por_fkey ( id, nombre, avatar_color ),
-      divisiones (
-        monto_asignado,
-        integrante:integrantes!divisiones_integrante_id_fkey ( id, nombre, avatar_color )
-      )
-    `)
-    .eq('grupo_id', filtros.grupoId)
-    .order('fecha', { ascending: false })
-    .order('creado_en', { ascending: false })
-    .limit(limit + 1)
-
-  if (filtros.mes) {
-    // 'YYYY-MM' → rango de fechas
-    const [year, month] = filtros.mes.split('-').map(Number)
-    const from = `${year}-${String(month).padStart(2, '0')}-01`
-    const lastDay = new Date(year, month, 0).getDate()
-    const to = `${year}-${String(month).padStart(2, '0')}-${lastDay}`
-    query = query.gte('fecha', from).lte('fecha', to)
-  }
-
-  if (filtros.categoria) {
-    query = query.eq('categoria', filtros.categoria)
-  }
-
-  if (filtros.cursor) {
-    query = query.lt('creado_en', filtros.cursor)
-  }
-
-  const { data, error } = await query
-
-  if (error || !data) return { gastos: [], hayMas: false }
-
-  const hayMas = data.length > limit
-  const rows = hayMas ? data.slice(0, limit) : data
-
-  // Filtro por persona (pagó o participó) — post-query para simplificar
-  let filtrados = rows
-  if (filtros.personaId) {
-    filtrados = rows.filter(g => {
-      const pagador = g.pagador as unknown as IntegranteMin
-      if (pagador?.id === filtros.personaId) return true
-      const divs = g.divisiones as unknown as { integrante: IntegranteMin; monto_asignado: number }[]
-      return divs.some(d => d.integrante?.id === filtros.personaId)
-    })
-  }
-
-  const gastos: GastoResumen[] = filtrados.map(g => {
-    const pagador = g.pagador as unknown as IntegranteMin
-    const divs = g.divisiones as unknown as { integrante: IntegranteMin; monto_asignado: number }[]
-
-    const miDiv = divs.find(d => d.integrante?.id === filtros.miId)
-
-    return {
-      id:          g.id,
-      descripcion: g.descripcion,
-      monto_total: Number(g.monto_total),
-      categoria:   g.categoria as Categoria,
-      fecha:       g.fecha,
-      mes_cierre:  g.mes_cierre,
-      creado_en:   g.creado_en,
-      pagador,
-      mi_division: miDiv ? Number(miDiv.monto_asignado) : 0,
-      divisiones:  divs.map(d => ({
-        integrante:     d.integrante,
-        monto_asignado: Number(d.monto_asignado),
-      })),
-    }
-  })
-
-  return { gastos, hayMas }
-}
-
-// ── Historial entre dos personas ─────────────────────────────
-
-export async function obtenerGastosEntreDos(
-  grupoId: string,
-  miId: string,
-  otroId: string
-): Promise<GastoResumen[]> {
-  const { data, error } = await supabase
-    .from('gastos')
-    .select(`
-      id, descripcion, monto_total, categoria, fecha, mes_cierre, creado_en,
-      pagador:integrantes!gastos_pagado_por_fkey ( id, nombre, avatar_color ),
-      divisiones (
-        monto_asignado,
-        integrante:integrantes!divisiones_integrante_id_fkey ( id, nombre, avatar_color )
-      )
-    `)
-    .eq('grupo_id', grupoId)
-    .is('mes_cierre', null)
-    .order('fecha', { ascending: false })
-    .order('creado_en', { ascending: false })
-
-  if (error || !data) return []
-
-  // Filtrar: gastos donde ambas (yo y otro) participan
-  const gastos: GastoResumen[] = []
-
-  for (const g of data) {
-    const divs = g.divisiones as unknown as { integrante: IntegranteMin; monto_asignado: number }[]
-    const ids = divs.map(d => d.integrante?.id)
-
-    if (!ids.includes(miId) || !ids.includes(otroId)) continue
-
-    const pagador = g.pagador as unknown as IntegranteMin
-    const miDiv = divs.find(d => d.integrante?.id === miId)
-
-    gastos.push({
-      id:          g.id,
-      descripcion: g.descripcion,
-      monto_total: Number(g.monto_total),
-      categoria:   g.categoria as Categoria,
-      fecha:       g.fecha,
-      mes_cierre:  g.mes_cierre,
-      creado_en:   g.creado_en,
-      pagador,
-      mi_division: miDiv ? Number(miDiv.monto_asignado) : 0,
-      divisiones:  divs.map(d => ({
-        integrante:     d.integrante,
-        monto_asignado: Number(d.monto_asignado),
-      })),
-    })
-  }
-
-  return gastos
-}
-
-// ── Pagos (transferencias de saldo) ──────────────────────────
-
-export interface PagoResumen {
+export interface PagoHistorial {
   id: string
   monto: number
   fecha: string
   metodo: MetodoPago
   creado_en: string
-  de: IntegranteMin
-  a: IntegranteMin
+  de_usuario_id: string
+  a_usuario_id: string
+  de: UsuarioMini | null
+  a: UsuarioMini | null
 }
 
-export interface FiltrosPagos {
-  grupoId: string
-  mes?: string
-  personaId?: string
-  cursor?: string
-  limit?: number
-}
-
-export async function obtenerPagos(filtros: FiltrosPagos): Promise<{
-  pagos: PagoResumen[]
-  hayMas: boolean
+/** Todos los gastos (con o sin cuenta) y todos los pagos (cierre o directos) del grupo activo. */
+export async function obtenerHistorialGrupo(grupoId: string): Promise<{
+  gastos: GastoHistorial[]
+  pagos: PagoHistorial[]
 }> {
-  const limit = filtros.limit ?? 20
+  const [{ data: gastosData }, { data: pagosData }] = await Promise.all([
+    supabase
+      .from('gastos')
+      .select(`
+        id, descripcion, monto_total, categoria, fecha, creado_en, cuenta_id, pagado_por,
+        cuentas ( nombre ),
+        usuarios!gastos_pagado_por_fkey ( id, nombre, avatar_color ),
+        divisiones ( monto_asignado, usuario_id, usuarios ( id, nombre, avatar_color ) )
+      `)
+      .eq('grupo_id', grupoId)
+      .order('fecha', { ascending: false })
+      .order('creado_en', { ascending: false }),
+    supabase
+      .from('pagos')
+      .select(`
+        id, monto, fecha, metodo, creado_en, de_usuario_id, a_usuario_id,
+        de:usuarios!pagos_de_usuario_id_fkey ( id, nombre, avatar_color ),
+        a:usuarios!pagos_a_usuario_id_fkey ( id, nombre, avatar_color )
+      `)
+      .eq('grupo_id', grupoId)
+      .order('fecha', { ascending: false })
+      .order('creado_en', { ascending: false }),
+  ])
 
-  let query = supabase
-    .from('pagos')
-    .select(`
-      id, monto, fecha, metodo, creado_en,
-      de:integrantes!pagos_de_integrante_id_fkey ( id, nombre, avatar_color ),
-      a:integrantes!pagos_a_integrante_id_fkey ( id, nombre, avatar_color )
-    `)
-    .eq('grupo_id', filtros.grupoId)
-    .order('fecha', { ascending: false })
-    .order('creado_en', { ascending: false })
-    .limit(limit + 1)
-
-  if (filtros.mes) {
-    const [year, month] = filtros.mes.split('-').map(Number)
-    const from = `${year}-${String(month).padStart(2, '0')}-01`
-    const lastDay = new Date(year, month, 0).getDate()
-    const to = `${year}-${String(month).padStart(2, '0')}-${lastDay}`
-    query = query.gte('fecha', from).lte('fecha', to)
+  type FilaGasto = {
+    id: string; descripcion: string; monto_total: number; categoria: Categoria; fecha: string; creado_en: string
+    cuenta_id: string | null; pagado_por: string
+    cuentas: { nombre: string } | null
+    usuarios: UsuarioMini | null
+    divisiones: { monto_asignado: number; usuario_id: string; usuarios: UsuarioMini | null }[]
   }
 
-  if (filtros.cursor) {
-    query = query.lt('creado_en', filtros.cursor)
-  }
-
-  const { data, error } = await query
-  if (error || !data) return { pagos: [], hayMas: false }
-
-  const hayMas = data.length > limit
-  const rows = hayMas ? data.slice(0, limit) : data
-
-  let filtrados = rows
-  if (filtros.personaId) {
-    filtrados = rows.filter(p => {
-      const de = p.de as unknown as IntegranteMin
-      const a = p.a as unknown as IntegranteMin
-      return de?.id === filtros.personaId || a?.id === filtros.personaId
-    })
-  }
-
-  const pagos: PagoResumen[] = filtrados.map(p => ({
-    id:        p.id,
-    monto:     Number(p.monto),
-    fecha:     p.fecha,
-    metodo:    p.metodo as MetodoPago,
-    creado_en: p.creado_en,
-    de:        p.de as unknown as IntegranteMin,
-    a:         p.a as unknown as IntegranteMin,
+  const gastos: GastoHistorial[] = ((gastosData ?? []) as unknown as FilaGasto[]).map(g => ({
+    id: g.id,
+    descripcion: g.descripcion,
+    monto_total: Number(g.monto_total),
+    categoria: g.categoria,
+    fecha: g.fecha,
+    creado_en: g.creado_en,
+    cuenta_id: g.cuenta_id,
+    cuenta_nombre: g.cuentas?.nombre ?? null,
+    pagado_por: g.pagado_por,
+    pagador: g.usuarios,
+    divisiones: g.divisiones.map(d => ({ usuario: d.usuarios, monto_asignado: Number(d.monto_asignado) })),
   }))
 
-  return { pagos, hayMas }
-}
-
-export async function obtenerPagosEntreDos(
-  grupoId: string,
-  miId: string,
-  otroId: string
-): Promise<PagoResumen[]> {
-  const { data, error } = await supabase
-    .from('pagos')
-    .select(`
-      id, monto, fecha, metodo, creado_en,
-      de:integrantes!pagos_de_integrante_id_fkey ( id, nombre, avatar_color ),
-      a:integrantes!pagos_a_integrante_id_fkey ( id, nombre, avatar_color )
-    `)
-    .eq('grupo_id', grupoId)
-    .order('fecha', { ascending: false })
-    .order('creado_en', { ascending: false })
-
-  if (error || !data) return []
-
-  return data
-    .filter(p => {
-      const de = p.de as unknown as IntegranteMin
-      const a = p.a as unknown as IntegranteMin
-      return (de?.id === miId && a?.id === otroId) || (de?.id === otroId && a?.id === miId)
-    })
-    .map(p => ({
-      id:        p.id,
-      monto:     Number(p.monto),
-      fecha:     p.fecha,
-      metodo:    p.metodo as MetodoPago,
-      creado_en: p.creado_en,
-      de:        p.de as unknown as IntegranteMin,
-      a:         p.a as unknown as IntegranteMin,
-    }))
-}
-
-// ── Meses disponibles ────────────────────────────────────────
-
-export async function obtenerMesesDisponibles(grupoId: string): Promise<string[]> {
-  const { data } = await supabase
-    .from('gastos')
-    .select('fecha')
-    .eq('grupo_id', grupoId)
-    .order('fecha', { ascending: false })
-
-  if (!data) return []
-
-  const meses = new Set<string>()
-  for (const g of data) {
-    const [year, month] = g.fecha.split('-')
-    meses.add(`${year}-${month}`)
+  type FilaPago = {
+    id: string; monto: number; fecha: string; metodo: MetodoPago; creado_en: string
+    de_usuario_id: string; a_usuario_id: string
+    de: UsuarioMini | null; a: UsuarioMini | null
   }
 
-  return Array.from(meses)
+  const pagos: PagoHistorial[] = ((pagosData ?? []) as unknown as FilaPago[]).map(p => ({
+    id: p.id,
+    monto: Number(p.monto),
+    fecha: p.fecha,
+    metodo: p.metodo,
+    creado_en: p.creado_en,
+    de_usuario_id: p.de_usuario_id,
+    a_usuario_id: p.a_usuario_id,
+    de: p.de,
+    a: p.a,
+  }))
+
+  return { gastos, pagos }
+}
+
+/**
+ * Historial "Personal": gastos aislados (grupo_id null) donde el usuario
+ * participa (pagador, creador, o con una división — el mismo criterio que
+ * es_participante_gasto en RLS), más los pagos asociados.
+ *
+ * Los gastos no llevan filtro explícito de participación: la política RLS
+ * `gastos_select` ya solo devuelve, para grupo_id null, las filas donde
+ * es_participante_gasto(id) es cierto — filtrar por participación acá sería
+ * redundante.
+ *
+ * Los pagos SÍ se filtran explícitamente por de/a = usuarioId. En teoría
+ * "asociado a un gasto aislado" es más amplio (cualquier pago vinculado vía
+ * pago_divisiones a una división de un gasto donde participo), pero para
+ * gastos sin grupo la política `pagos_all` solo deja leer un pago a sus dos
+ * partes directas (de/a) — nunca a un tercer participante del mismo gasto
+ * que no sea parte de ESE pago puntual. Como además todo pago aislado en
+ * este modelo se genera pagando la propia división de quien llama
+ * (RegistrarPago modo directo), quien aparece como de/a siempre es alguien
+ * con una división real en el gasto — así que este filtro coincide en la
+ * práctica con "pagos de gastos donde participo", y es lo único que RLS
+ * dejaría ver de todos modos.
+ */
+export async function obtenerHistorialPersonal(usuarioId: string): Promise<{
+  gastos: GastoHistorial[]
+  pagos: PagoHistorial[]
+}> {
+  const [{ data: gastosData }, { data: pagosData }] = await Promise.all([
+    supabase
+      .from('gastos')
+      .select(`
+        id, descripcion, monto_total, categoria, fecha, creado_en, cuenta_id, pagado_por,
+        usuarios!gastos_pagado_por_fkey ( id, nombre, avatar_color ),
+        divisiones ( monto_asignado, usuario_id, usuarios ( id, nombre, avatar_color ) )
+      `)
+      .is('grupo_id', null)
+      .order('fecha', { ascending: false })
+      .order('creado_en', { ascending: false }),
+    supabase
+      .from('pagos')
+      .select(`
+        id, monto, fecha, metodo, creado_en, de_usuario_id, a_usuario_id,
+        de:usuarios!pagos_de_usuario_id_fkey ( id, nombre, avatar_color ),
+        a:usuarios!pagos_a_usuario_id_fkey ( id, nombre, avatar_color )
+      `)
+      .is('grupo_id', null)
+      .or(`de_usuario_id.eq.${usuarioId},a_usuario_id.eq.${usuarioId}`)
+      .order('fecha', { ascending: false })
+      .order('creado_en', { ascending: false }),
+  ])
+
+  type FilaGastoSinCuenta = {
+    id: string; descripcion: string; monto_total: number; categoria: Categoria; fecha: string; creado_en: string
+    cuenta_id: string | null; pagado_por: string
+    usuarios: UsuarioMini | null
+    divisiones: { monto_asignado: number; usuario_id: string; usuarios: UsuarioMini | null }[]
+  }
+
+  const gastos: GastoHistorial[] = ((gastosData ?? []) as unknown as FilaGastoSinCuenta[]).map(g => ({
+    id: g.id,
+    descripcion: g.descripcion,
+    monto_total: Number(g.monto_total),
+    categoria: g.categoria,
+    fecha: g.fecha,
+    creado_en: g.creado_en,
+    cuenta_id: g.cuenta_id, // siempre null acá, pero se conserva el campo por consistencia de tipo
+    cuenta_nombre: null,
+    pagado_por: g.pagado_por,
+    pagador: g.usuarios,
+    divisiones: g.divisiones.map(d => ({ usuario: d.usuarios, monto_asignado: Number(d.monto_asignado) })),
+  }))
+
+  type FilaPago = {
+    id: string; monto: number; fecha: string; metodo: MetodoPago; creado_en: string
+    de_usuario_id: string; a_usuario_id: string
+    de: UsuarioMini | null; a: UsuarioMini | null
+  }
+
+  const pagos: PagoHistorial[] = ((pagosData ?? []) as unknown as FilaPago[]).map(p => ({
+    id: p.id,
+    monto: Number(p.monto),
+    fecha: p.fecha,
+    metodo: p.metodo,
+    creado_en: p.creado_en,
+    de_usuario_id: p.de_usuario_id,
+    a_usuario_id: p.a_usuario_id,
+    de: p.de,
+    a: p.a,
+  }))
+
+  return { gastos, pagos }
 }
 
 // ── Helpers de formato ───────────────────────────────────────
-
-export function formatearMes(mesYYYYMM: string): string {
-  const [year, month] = mesYYYYMM.split('-').map(Number)
-  const d = new Date(year, month - 1, 1)
-  return d.toLocaleDateString('es-CL', { month: 'long', year: 'numeric' })
-    .replace(/^\w/, c => c.toUpperCase())
-}
 
 export function formatearFechaCorta(fecha: string): string {
   const [year, month, day] = fecha.split('-').map(Number)
@@ -327,4 +211,15 @@ export function formatearFechaCorta(fecha: string): string {
   if (d.toDateString() === ayer.toDateString()) return 'Ayer'
 
   return d.toLocaleDateString('es-CL', { day: 'numeric', month: 'short' })
+}
+
+export function formatearEncabezadoFecha(fecha: string): string {
+  const corta = formatearFechaCorta(fecha)
+  if (corta === 'Hoy' || corta === 'Ayer') {
+    const [, month, day] = fecha.split('-').map(Number)
+    const d = new Date(fecha + 'T12:00:00')
+    const mes = d.toLocaleDateString('es-CL', { month: 'short' })
+    return `${corta} · ${day} ${mes}`
+  }
+  return corta
 }

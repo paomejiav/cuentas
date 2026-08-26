@@ -1,17 +1,20 @@
 'use client'
 
-import { useEffect, useState, useMemo } from 'react'
-import { useParams, useRouter } from 'next/navigation'
+import { Suspense, useEffect, useState, useMemo } from 'react'
+import { useRouter, useSearchParams } from 'next/navigation'
+import Link from 'next/link'
+import { supabase } from '@/lib/supabase'
+import { resolverGrupoActivo, type GrupoOpcion } from '@/lib/grupo-activo'
 import {
-  editarGasto, validarPaso1, validarPaso2, calcularMontosPorPersona, listarParticipantesPosibles,
-  type TipoDivision, type DivisionInput,
+  crearGasto, validarPaso1, validarPaso2, calcularMontosPorPersona,
+  listarParticipantesPosibles, listarCuentasActivasGrupo,
+  type TipoDivision, type DivisionInput, type CuentaMini,
 } from '@/lib/gastos'
+import { ICONO_TIPO, listarContactosCompartidos, obtenerUsuarioMini, type UsuarioMini } from '@/lib/cuentas'
 import { formatCLP } from '@/lib/format'
 import { Avatar } from '@/components/app/Avatar'
 import { Toast } from '@/components/app/Toast'
-import { supabase } from '@/lib/supabase'
 import type { Categoria } from '@/types/database'
-import { listarContactosCompartidos, obtenerUsuarioMini, type UsuarioMini } from '@/lib/cuentas'
 
 // ── Constantes ───────────────────────────────────────────────
 
@@ -53,25 +56,6 @@ function blurInput(e: React.FocusEvent<HTMLInputElement | HTMLTextAreaElement>) 
   e.target.style.borderColor = 'var(--color-border)'
 }
 
-// ── Tipos locales (modelo nuevo: usuario_id, cuenta_id opcional) ──
-
-interface GastoRow {
-  id: string
-  grupo_id: string | null // null = gasto aislado, sin grupo
-  cuenta_id: string | null
-  descripcion: string
-  monto_total: number
-  pagado_por: string
-  categoria: Categoria
-  fecha: string
-  nota: string | null
-}
-
-interface DivisionRow {
-  usuario_id: string
-  monto_asignado: number
-}
-
 // ── Sub-componentes ──────────────────────────────────────────
 
 function Label({ htmlFor, children }: { htmlFor?: string; children: React.ReactNode }) {
@@ -94,18 +78,26 @@ function Label({ htmlFor, children }: { htmlFor?: string; children: React.ReactN
 
 function ErrorMsg({ mensaje }: { mensaje: string }) {
   return (
-    <p role="alert" style={{
-      margin: '6px 0 0', fontSize: 12, color: 'var(--color-negative)',
-      fontFamily: 'var(--font-dm-sans), sans-serif',
-      display: 'flex', alignItems: 'center', gap: 4,
-    }}>
+    <p
+      role="alert"
+      style={{
+        margin: '6px 0 0', fontSize: 12,
+        color: 'var(--color-negative)',
+        fontFamily: 'var(--font-dm-sans), sans-serif',
+        display: 'flex', alignItems: 'center', gap: 4,
+      }}
+    >
       <span aria-hidden="true">⚠</span> {mensaje}
     </p>
   )
 }
 
-function Section({ children }: { children: React.ReactNode }) {
-  return <div style={{ marginBottom: 22 }}>{children}</div>
+function Section({ children, style }: { children: React.ReactNode; style?: React.CSSProperties }) {
+  return (
+    <div style={{ marginBottom: 22, ...style }}>
+      {children}
+    </div>
+  )
 }
 
 function BotonCTA({ onClick, disabled, loading, children }: {
@@ -135,32 +127,67 @@ function BotonCTA({ onClick, disabled, loading, children }: {
   )
 }
 
-// ── Página principal ─────────────────────────────────────────
+// ── Tipos ────────────────────────────────────────────────────
 
-export default function EditarGastoPage() {
+export interface CuentaFija {
+  id: string
+  grupoId: string
+  nombre: string
+  icono: string | null
+}
+
+interface Props {
+  /** Si viene de /cuentas/[id]/gastos/nuevo: la cuenta ya está fija, no editable. */
+  cuentaFija?: CuentaFija
+  /**
+   * Gasto aislado, sin grupo — entre "vos" y contactos compartidos (unión de
+   * miembros de todos tus grupos), no acotado al grupo activo. Sin selector
+   * de cuenta. Mutuamente excluyente con cuentaFija.
+   */
+  personal?: boolean
+}
+
+// ── Componente ───────────────────────────────────────────────
+
+export function NuevoGastoScreen(props: Props) {
+  return (
+    <Suspense>
+      <NuevoGastoScreenInner {...props} />
+    </Suspense>
+  )
+}
+
+function NuevoGastoScreenInner({ cuentaFija, personal }: Props) {
   const router = useRouter()
-  const { id } = useParams<{ id: string }>()
+  const params = useSearchParams()
+
+  const [fase, setFase] = useState<'cargando' | 'elegir-grupo' | 'listo'>('cargando')
+  const [grupos, setGrupos] = useState<GrupoOpcion[]>([])
+  const [grupoId, setGrupoId] = useState<string | null>(null)
+  const [usuarioId, setUsuarioId] = useState<string | null>(null)
+
+  const [cuentasDisponibles, setCuentasDisponibles] = useState<CuentaMini[]>([])
+  const [cuentaSeleccionadaId, setCuentaSeleccionadaId] = useState<string | null>(null) // null = sin cuenta
 
   const [paso, setPaso] = useState<1 | 2>(1)
-  const [cargando, setCargando] = useState(true)
-  const [noEncontrado, setNoEncontrado] = useState(false)
-  const [cuentaId, setCuentaId] = useState<string | null>(null)
   const [personas, setPersonas] = useState<UsuarioMini[]>([])
-  const [usuarioId, setUsuarioId] = useState<string | null>(null)
+  const [cargandoPersonas, setCargandoPersonas] = useState(true)
   const [guardando, setGuardando] = useState(false)
   const [toast, setToast] = useState<{ mensaje: string; tipo: 'exito' | 'error' } | null>(null)
   const [errores, setErrores] = useState<Record<string, string>>({})
 
+  // Paso 1 — datos del gasto
   const [descripcion, setDescripcion] = useState('')
   const [monto, setMonto] = useState(0)
   const [displayMonto, setDisplayMonto] = useState('')
   const [pagadoPor, setPagadoPor] = useState('')
-  const [categoria, setCategoria] = useState<Categoria>('otro')
-  const [fecha, setFecha] = useState('')
+  const [categoria, setCategoria] = useState<Categoria>('comida')
+  const [fecha, setFecha] = useState(() => new Date().toISOString().slice(0, 10))
   const [nota, setNota] = useState('')
 
+  // Paso 2 — división
   const [participantes, setParticipantes] = useState<string[]>([])
-  const [tipoDivision, setTipoDivision] = useState<TipoDivision>('exacto')
+  const [tipoDivision, setTipoDivision] = useState<TipoDivision>('igual')
   const [divisionValues, setDivisionValues] = useState<DivisionInput[]>([])
 
   function handleMontoChange(e: React.ChangeEvent<HTMLInputElement>) {
@@ -170,54 +197,89 @@ export default function EditarGastoPage() {
     setDisplayMonto(numeric > 0 ? '$' + numeric.toLocaleString('es-CL') : '')
   }
 
-  // Cargar gasto + divisiones + personas posibles (cuenta_miembros o grupo_miembros)
+  // ── Resolver usuario + grupo (+ cuentas del grupo si no hay cuenta fija) ──
   useEffect(() => {
     let activo = true
-    async function cargar() {
+
+    async function iniciar() {
       const { data: { user } } = await supabase.auth.getUser()
-      if (!activo) return
       if (!user) { router.replace('/login'); return }
+      if (!activo) return
       setUsuarioId(user.id)
 
-      const { data: gasto } = await supabase
-        .from('gastos')
-        .select('id, grupo_id, cuenta_id, descripcion, monto_total, pagado_por, categoria, fecha, nota')
-        .eq('id', id)
-        .single()
-      if (!activo) return
-      if (!gasto) { setNoEncontrado(true); setCargando(false); return }
-      const g = gasto as GastoRow
+      if (personal) {
+        // Gasto aislado: no hay grupo que resolver — participantes salen de
+        // los contactos compartidos, no de grupo_miembros/cuenta_miembros.
+        setFase('listo')
+        return
+      }
 
-      const [{ data: divs }, listaPersonas] = await Promise.all([
-        supabase.from('divisiones').select('usuario_id, monto_asignado').eq('gasto_id', id),
-        // Gasto aislado (sin grupo): las personas posibles salen de los
-        // contactos compartidos + vos mismo, no de grupo_miembros — ahí no
-        // habría ninguna fila con grupo_id null.
-        g.grupo_id
-          ? listarParticipantesPosibles({ cuentaId: g.cuenta_id, grupoId: g.grupo_id })
-          : Promise.all([obtenerUsuarioMini(user.id), listarContactosCompartidos(user.id)])
-              .then(([yo, contactos]) => (yo ? [yo, ...contactos] : contactos)),
-      ])
+      if (cuentaFija) {
+        setGrupoId(cuentaFija.grupoId)
+        setCuentaSeleccionadaId(cuentaFija.id)
+        setFase('listo')
+        return
+      }
+
+      const resolucion = await resolverGrupoActivo(user.id, params.get('grupo'))
       if (!activo) return
 
-      setCuentaId(g.cuenta_id)
-      setDescripcion(g.descripcion)
-      setMonto(g.monto_total)
-      setDisplayMonto('$' + g.monto_total.toLocaleString('es-CL'))
-      setPagadoPor(g.pagado_por)
-      setCategoria(g.categoria)
-      setFecha(g.fecha)
-      setNota(g.nota ?? '')
+      if (resolucion.estado === 'sin-grupos') { router.replace('/'); return }
+      if (resolucion.estado === 'elegir') {
+        setGrupos(resolucion.grupos)
+        setFase('elegir-grupo')
+        return
+      }
 
-      const divisiones = (divs as DivisionRow[]) ?? []
-      setParticipantes(divisiones.map(d => d.usuario_id))
-      setDivisionValues(divisiones.map(d => ({ usuario_id: d.usuario_id, valor: d.monto_asignado })))
-      setPersonas(listaPersonas)
-      setCargando(false)
+      setGrupoId(resolucion.grupoId)
+      const cuentas = await listarCuentasActivasGrupo(resolucion.grupoId)
+      if (!activo) return
+      setCuentasDisponibles(cuentas)
+      setFase('listo')
     }
-    cargar()
+
+    iniciar()
     return () => { activo = false }
-  }, [id, router])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [cuentaFija?.id, personal])
+
+  // ── Cargar personas posibles: cuenta_miembros / grupo_miembros, o —en modo
+  // personal— vos + contactos compartidos de todos tus grupos ──
+  useEffect(() => {
+    if (fase !== 'listo') return
+    if (!personal && !grupoId) return
+    if (!usuarioId) return
+    let activo = true
+    setCargandoPersonas(true)
+
+    const cargarLista = personal
+      ? Promise.all([obtenerUsuarioMini(usuarioId), listarContactosCompartidos(usuarioId)])
+          .then(([yo, contactos]) => (yo ? [yo, ...contactos] : contactos))
+      : listarParticipantesPosibles({ cuentaId: cuentaSeleccionadaId, grupoId: grupoId! })
+
+    cargarLista.then(lista => {
+      if (!activo) return
+      setPersonas(lista)
+      setParticipantes(lista.map(p => p.id))
+      setDivisionValues(lista.map(p => ({ usuario_id: p.id, valor: 0 })))
+      setPagadoPor(prev => {
+        if (prev && lista.some(p => p.id === prev)) return prev
+        if (usuarioId && lista.some(p => p.id === usuarioId)) return usuarioId
+        return lista[0]?.id ?? ''
+      })
+      setCargandoPersonas(false)
+    })
+
+    return () => { activo = false }
+  }, [fase, grupoId, cuentaSeleccionadaId, usuarioId, personal])
+
+  // Recalcular divisionValues al cambiar participantes o tipo
+  useEffect(() => {
+    setDivisionValues(
+      participantes.map(id => ({ usuario_id: id, valor: tipoDivision === 'porcentaje' ? Math.round(100 / participantes.length) : 0 }))
+    )
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [participantes, tipoDivision])
 
   const preview = useMemo(() => {
     if (monto <= 0 || participantes.length === 0) return {}
@@ -227,27 +289,14 @@ export default function EditarGastoPage() {
   const sumaValores = divisionValues.reduce((s, d) => s + (d.valor || 0), 0)
   const cuadrado = tipoDivision === 'porcentaje' ? sumaValores === 100 : sumaValores === monto
 
-  function toggleParticipante(pid: string) {
-    setParticipantes(prev => {
-      const next = prev.includes(pid) ? prev.filter(p => p !== pid) : [...prev, pid]
-      setDivisionValues(prevVals => {
-        if (prev.includes(pid)) return prevVals.filter(d => d.usuario_id !== pid)
-        return [...prevVals, { usuario_id: pid, valor: 0 }]
-      })
-      return next
-    })
+  function toggleParticipante(id: string) {
+    setParticipantes(prev =>
+      prev.includes(id) ? prev.filter(p => p !== id) : [...prev, id]
+    )
   }
 
-  function cambiarTipoDivision(t: TipoDivision) {
-    setTipoDivision(t)
-    setDivisionValues(participantes.map(pid => ({
-      usuario_id: pid,
-      valor: t === 'porcentaje' ? Math.round(100 / (participantes.length || 1)) : 0,
-    })))
-  }
-
-  function setDivisionValor(pid: string, valor: number) {
-    setDivisionValues(prev => prev.map(d => d.usuario_id === pid ? { ...d, valor } : d))
+  function setDivisionValor(id: string, valor: number) {
+    setDivisionValues(prev => prev.map(d => d.usuario_id === id ? { ...d, valor } : d))
   }
 
   function handleSiguiente() {
@@ -263,6 +312,20 @@ export default function EditarGastoPage() {
     window.scrollTo(0, 0)
   }
 
+  function resetearParaOtroGasto() {
+    setDescripcion('')
+    setMonto(0)
+    setDisplayMonto('')
+    setCategoria('comida')
+    setFecha(new Date().toISOString().slice(0, 10))
+    setNota('')
+    setTipoDivision('igual')
+    setParticipantes(personas.map(p => p.id))
+    setPagadoPor(usuarioId && personas.some(p => p.id === usuarioId) ? usuarioId : (personas[0]?.id ?? ''))
+    setPaso(1)
+    window.scrollTo(0, 0)
+  }
+
   async function handleGuardar() {
     const errs = validarPaso2(monto, tipoDivision, participantes, divisionValues)
     if (errs.length > 0) {
@@ -274,9 +337,21 @@ export default function EditarGastoPage() {
     setErrores({})
     setGuardando(true)
 
-    const result = await editarGasto(id, {
-      descripcion, monto_total: monto, pagado_por: pagadoPor, categoria, fecha, nota,
-      tipo_division: tipoDivision, participantes, divisiones: divisionValues,
+    const cuentaIdFinal = cuentaFija ? cuentaFija.id : cuentaSeleccionadaId
+
+    const result = await crearGasto({
+      grupo_id:      personal ? null : grupoId!,
+      cuenta_id:     personal ? null : cuentaIdFinal,
+      descripcion,
+      monto_total:   monto,
+      pagado_por:    pagadoPor,
+      categoria,
+      fecha,
+      nota,
+      creado_por:    usuarioId!,
+      tipo_division: tipoDivision,
+      participantes,
+      divisiones:    divisionValues,
     })
 
     setGuardando(false)
@@ -286,40 +361,111 @@ export default function EditarGastoPage() {
       return
     }
 
-    setToast({ mensaje: '¡Cambios guardados! 🎉', tipo: 'exito' })
-    setTimeout(() => {
-      if (cuentaId) router.push(`/cuentas/${cuentaId}`)
-      else router.back()
-    }, 1200)
+    setToast({ mensaje: '¡Gasto guardado! 🎉', tipo: 'exito' })
+
+    if (personal) {
+      setTimeout(() => router.push('/historial?tab=personal'), 1400)
+    } else if (cuentaIdFinal) {
+      setTimeout(() => router.push(`/cuentas/${cuentaIdFinal}`), 1400)
+    } else {
+      // Gasto suelto (sin cuenta, pero dentro de un grupo): no hay todavía
+      // una pantalla que lo liste, así que nos quedamos en el formulario
+      // listo para cargar el siguiente.
+      setTimeout(resetearParaOtroGasto, 1000)
+    }
   }
 
-  if (cargando) return null
+  function volver() {
+    if (paso === 2) { setPaso(1); return }
+    if (cuentaFija) { router.push(`/cuentas/${cuentaFija.id}`); return }
+    router.back()
+  }
 
-  if (noEncontrado) {
+  // ── RENDER ────────────────────────────────────────────────
+
+  if (fase === 'cargando') {
     return (
-      <div style={{
-        minHeight: '100vh', display: 'flex', flexDirection: 'column',
-        alignItems: 'center', justifyContent: 'center', textAlign: 'center',
-        background: 'var(--color-bg)', padding: '0 32px',
-      }}>
-        <p style={{ fontSize: 14, color: 'var(--color-text-secondary)', fontFamily: 'var(--font-dm-sans), sans-serif' }}>
-          No encontramos este gasto, o no tenés acceso.
-        </p>
+      <div style={{ minHeight: '100vh', background: 'var(--color-bg)' }}>
+        <p style={{ padding: 24, fontSize: 13.5, color: 'var(--color-text-secondary)', fontFamily: 'var(--font-dm-sans), sans-serif' }}>Cargando…</p>
+      </div>
+    )
+  }
+
+  if (fase === 'elegir-grupo') {
+    return (
+      <div style={{ minHeight: '100vh', background: 'var(--color-bg)' }}>
+        <div style={{ maxWidth: 440, margin: '0 auto', padding: '0 18px', paddingTop: 'max(24px, env(safe-area-inset-top, 0px))' }}>
+          <h1 style={{ margin: 0, fontFamily: 'var(--font-sora), sans-serif', fontSize: 22, fontWeight: 800, letterSpacing: '-0.02em', color: 'var(--color-text-primary)' }}>
+            ¿En qué grupo va este gasto?
+          </h1>
+          <p style={{ margin: '6px 0 20px', fontSize: 13.5, color: 'var(--color-text-secondary)', fontFamily: 'var(--font-dm-sans), sans-serif' }}>
+            Pertenecés a más de un grupo.
+          </p>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+            {grupos.map(g => (
+              <Link
+                key={g.id}
+                href={`/gastos/nuevo?grupo=${g.id}`}
+                style={{
+                  display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                  background: 'var(--color-surface-white)', border: '1px solid var(--color-border)',
+                  borderRadius: 16, padding: '16px 18px', textDecoration: 'none',
+                }}
+              >
+                <span style={{ fontSize: 15, fontWeight: 700, color: 'var(--color-text-primary)', fontFamily: 'var(--font-dm-sans), sans-serif' }}>{g.nombre}</span>
+                <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M6 4l4 4-4 4" stroke="var(--color-cta)" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" /></svg>
+              </Link>
+            ))}
+          </div>
+        </div>
+      </div>
+    )
+  }
+
+  if (personal && !cargandoPersonas && personas.length <= 1) {
+    return (
+      <div style={{ minHeight: '100vh', background: 'var(--color-bg)' }}>
+        <div style={{ maxWidth: 440, margin: '0 auto', padding: '0 18px', paddingTop: 'max(24px, env(safe-area-inset-top, 0px))' }}>
+          <button
+            onClick={() => router.back()}
+            aria-label="Volver"
+            style={{
+              background: 'var(--color-surface-white)', border: '1px solid var(--color-border)',
+              borderRadius: 13, width: 42, height: 42, padding: 0,
+              display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer',
+            }}
+          >
+            <svg width="18" height="18" viewBox="0 0 18 18" fill="none">
+              <path d="M11 4l-5 5 5 5" stroke="var(--color-text-primary)" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+            </svg>
+          </button>
+          <div style={{ textAlign: 'center', marginTop: 70 }}>
+            <div style={{ fontSize: 36, marginBottom: 12 }}>🤝</div>
+            <p style={{ margin: 0, fontSize: 15, fontWeight: 700, color: 'var(--color-text-primary)', fontFamily: 'var(--font-dm-sans), sans-serif' }}>
+              Todavía no compartís un grupo con nadie
+            </p>
+            <p style={{ margin: '6px 0 0', fontSize: 13, color: 'var(--color-text-secondary)', fontFamily: 'var(--font-dm-sans), sans-serif', lineHeight: 1.5 }}>
+              Para armar un gasto entre ustedes, primero necesitás compartir al menos un grupo con esa persona.
+            </p>
+          </div>
+        </div>
       </div>
     )
   }
 
   return (
     <div style={{ minHeight: '100vh', background: 'var(--color-bg)', paddingBottom: 40 }}>
-      <div style={{ maxWidth: 640, margin: '0 auto' }}>
 
+      <div style={{ maxWidth: 640, margin: '0 auto' }}>
         <header style={{
           paddingTop: 'max(56px, calc(env(safe-area-inset-top, 0px) + 16px))',
-          paddingBottom: 18, paddingLeft: 'var(--page-px)', paddingRight: 'var(--page-px)',
+          paddingBottom: 18,
+          paddingLeft: 'var(--page-px)',
+          paddingRight: 'var(--page-px)',
           display: 'flex', alignItems: 'center', gap: 12,
         }}>
           <button
-            onClick={() => paso === 1 ? router.back() : setPaso(1)}
+            onClick={volver}
             aria-label="Volver"
             style={{
               background: 'var(--color-surface-white)', border: '1px solid var(--color-border)',
@@ -332,22 +478,38 @@ export default function EditarGastoPage() {
               <path d="M11 4l-5 5 5 5" stroke="var(--color-text-primary)" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
             </svg>
           </button>
+
           <div style={{ flex: 1, minWidth: 0 }}>
             <h1 style={{
               margin: 0, fontSize: 19, fontWeight: 700, color: 'var(--color-text-primary)',
               fontFamily: 'var(--font-sora), sans-serif', letterSpacing: '-0.01em',
             }}>
-              {paso === 1 ? 'Editar gasto' : 'Cómo se divide'}
+              {paso === 1 ? 'Nuevo gasto' : 'Cómo se divide'}
             </h1>
             <p style={{ margin: '1px 0 0', fontSize: 12, color: 'var(--color-neutral)', fontFamily: 'var(--font-dm-sans), sans-serif' }}>
-              {paso === 1 ? 'Paso 1 de 2' : `Paso 2 de 2 · ${formatCLP(monto)} entre ${participantes.length}`}
+              {paso === 1
+                ? (cuentaFija ? `${cuentaFija.icono ?? ''} ${cuentaFija.nombre}` : 'Paso 1 de 2 · ¿Cuánto y qué?')
+                : `Paso 2 de 2 · ${formatCLP(monto)} entre ${participantes.length}`}
             </p>
+          </div>
+
+          <div style={{ display: 'flex', gap: 5, flexShrink: 0 }}>
+            {[1, 2].map(n => (
+              <span key={n} style={{
+                width: n === paso ? 22 : 10, height: 5, borderRadius: 3,
+                background: n <= paso ? 'var(--color-cta)' : '#DEDEE6',
+                transition: 'width 250ms ease, background 250ms ease',
+              }} />
+            ))}
           </div>
         </header>
 
         <main style={{ padding: '0 var(--page-px)' }}>
+
+          {/* ════════════════════════════════════════ PASO 1 */}
           {paso === 1 && (
             <>
+              {/* Monto — prominente */}
               <Section>
                 <div style={{
                   background: 'var(--color-surface-white)', border: '1px solid var(--color-border)',
@@ -358,9 +520,15 @@ export default function EditarGastoPage() {
                   </p>
                   <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'center', gap: 6, marginTop: 8 }}>
                     <input
-                      type="text" inputMode="numeric" placeholder="$0" autoComplete="off"
-                      value={displayMonto} onChange={handleMontoChange}
+                      id="input-monto"
+                      type="text"
+                      inputMode="numeric"
+                      placeholder="$0"
+                      autoComplete="off"
+                      value={displayMonto}
+                      onChange={handleMontoChange}
                       aria-invalid={!!errores.monto}
+                      aria-describedby={errores.monto ? 'error-monto' : undefined}
                       style={{
                         border: 'none', outline: 'none', background: 'transparent',
                         fontFamily: 'var(--font-sora), sans-serif', fontSize: 40, fontWeight: 800,
@@ -374,17 +542,24 @@ export default function EditarGastoPage() {
                 {errores.monto && <ErrorMsg mensaje={errores.monto} />}
               </Section>
 
+              {/* Descripción */}
               <Section>
                 <Label htmlFor="input-descripcion">Descripción</Label>
                 <input
-                  id="input-descripcion" type="text" placeholder="¿En qué se gastó?"
-                  value={descripcion} onChange={e => setDescripcion(e.target.value)}
-                  aria-invalid={!!errores.descripcion} style={inputBase}
-                  onFocus={focusInput} onBlur={blurInput}
+                  id="input-descripcion"
+                  type="text"
+                  placeholder="¿En qué se gastó?"
+                  value={descripcion}
+                  onChange={e => setDescripcion(e.target.value)}
+                  aria-invalid={!!errores.descripcion}
+                  style={inputBase}
+                  onFocus={focusInput}
+                  onBlur={blurInput}
                 />
                 {errores.descripcion && <ErrorMsg mensaje={errores.descripcion} />}
               </Section>
 
+              {/* Categoría */}
               <Section>
                 <Label>Categoría</Label>
                 <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
@@ -413,53 +588,118 @@ export default function EditarGastoPage() {
                 </div>
               </Section>
 
+              {/* ¿A qué cuenta pertenece? — solo si no vino ya fija ni es un gasto aislado */}
+              {!cuentaFija && !personal && (
+                <Section>
+                  <Label>¿A qué cuenta pertenece?</Label>
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+                    <button
+                      onClick={() => setCuentaSeleccionadaId(null)}
+                      style={{
+                        display: 'inline-flex', alignItems: 'center', gap: 6,
+                        padding: '8px 13px', borderRadius: 100,
+                        background: cuentaSeleccionadaId === null ? 'var(--tint-cta)' : 'var(--color-surface-white)',
+                        border: cuentaSeleccionadaId === null ? '1px solid var(--border-cta)' : '1px solid var(--color-border)',
+                        color: cuentaSeleccionadaId === null ? 'var(--color-cta-dark)' : 'var(--color-text-secondary)',
+                        fontSize: 13, fontWeight: cuentaSeleccionadaId === null ? 600 : 500,
+                        fontFamily: 'var(--font-dm-sans), sans-serif',
+                        cursor: 'pointer', WebkitTapHighlightColor: 'transparent',
+                      }}
+                    >
+                      Sin cuenta (gasto suelto)
+                    </button>
+                    {cuentasDisponibles.map(c => {
+                      const activo = cuentaSeleccionadaId === c.id
+                      return (
+                        <button
+                          key={c.id}
+                          onClick={() => setCuentaSeleccionadaId(c.id)}
+                          style={{
+                            display: 'inline-flex', alignItems: 'center', gap: 6,
+                            padding: '8px 13px', borderRadius: 100,
+                            background: activo ? 'var(--tint-cta)' : 'var(--color-surface-white)',
+                            border: activo ? '1px solid var(--border-cta)' : '1px solid var(--color-border)',
+                            color: activo ? 'var(--color-cta-dark)' : 'var(--color-text-secondary)',
+                            fontSize: 13, fontWeight: activo ? 600 : 500,
+                            fontFamily: 'var(--font-dm-sans), sans-serif',
+                            cursor: 'pointer', WebkitTapHighlightColor: 'transparent',
+                          }}
+                        >
+                          <span>{c.icono ?? ICONO_TIPO[c.tipo as keyof typeof ICONO_TIPO] ?? '🗂️'}</span> {c.nombre}
+                        </button>
+                      )
+                    })}
+                  </div>
+                </Section>
+              )}
+
+              {/* ¿Quién pagó? */}
               <Section>
                 <Label>¿Quién pagó?</Label>
-                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 14 }}>
-                  {personas.map(p => {
-                    const activo = pagadoPor === p.id
-                    return (
-                      <button
-                        key={p.id}
-                        onClick={() => setPagadoPor(p.id)}
-                        style={{
-                          display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 5,
-                          background: 'transparent', border: 'none', cursor: 'pointer', padding: 0,
-                          WebkitTapHighlightColor: 'transparent',
-                        }}
-                      >
-                        <span style={{ borderRadius: '50%', boxShadow: activo ? '0 0 0 2px #fff, 0 0 0 4px var(--color-cta)' : 'none' }}>
-                          <Avatar nombre={p.nombre} color={p.avatar_color} size={48} />
-                        </span>
-                        <span style={{
-                          fontSize: 11, fontWeight: activo ? 700 : 400,
-                          color: activo ? 'var(--color-text-primary)' : 'var(--color-neutral)',
-                          fontFamily: 'var(--font-dm-sans), sans-serif',
-                        }}>
-                          {p.id === usuarioId ? 'Tú' : p.nombre}
-                        </span>
-                      </button>
-                    )
-                  })}
-                </div>
+                {cargandoPersonas ? (
+                  <div className="skeleton" style={{ height: 48, borderRadius: 14 }} />
+                ) : (
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: 14 }}>
+                    {personas.map(p => {
+                      const activo = pagadoPor === p.id
+                      return (
+                        <button
+                          key={p.id}
+                          onClick={() => setPagadoPor(p.id)}
+                          style={{
+                            display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 5,
+                            background: 'transparent', border: 'none', cursor: 'pointer', padding: 0,
+                            WebkitTapHighlightColor: 'transparent',
+                          }}
+                        >
+                          <span style={{ borderRadius: '50%', boxShadow: activo ? '0 0 0 2px #fff, 0 0 0 4px var(--color-cta)' : 'none' }}>
+                            <Avatar nombre={p.nombre} color={p.avatar_color} size={48} />
+                          </span>
+                          <span style={{
+                            fontSize: 11, fontWeight: activo ? 700 : 400,
+                            color: activo ? 'var(--color-text-primary)' : 'var(--color-neutral)',
+                            fontFamily: 'var(--font-dm-sans), sans-serif',
+                          }}>
+                            {p.id === usuarioId ? 'Tú' : p.nombre}
+                          </span>
+                        </button>
+                      )
+                    })}
+                  </div>
+                )}
                 {errores.pagado_por && <ErrorMsg mensaje={errores.pagado_por} />}
               </Section>
 
+              {/* Fecha */}
               <Section>
                 <Label>Fecha</Label>
                 <input
-                  type="date" value={fecha} onChange={e => setFecha(e.target.value)}
-                  style={inputBase} onFocus={focusInput} onBlur={blurInput}
+                  type="date"
+                  value={fecha}
+                  onChange={e => setFecha(e.target.value)}
+                  style={inputBase}
+                  onFocus={focusInput}
+                  onBlur={blurInput}
                 />
               </Section>
 
+              {/* Nota */}
               <Section>
                 <Label>Nota (opcional)</Label>
                 <textarea
-                  placeholder="Detalles adicionales…" value={nota} onChange={e => setNota(e.target.value)}
+                  placeholder="Detalles adicionales…"
+                  value={nota}
+                  onChange={e => setNota(e.target.value)}
                   rows={2}
-                  style={{ ...inputBase, height: 'auto', padding: '14px 15px', resize: 'none', lineHeight: 1.5 }}
-                  onFocus={focusInput} onBlur={blurInput}
+                  style={{
+                    ...inputBase,
+                    height: 'auto',
+                    padding: '14px 15px',
+                    resize: 'none',
+                    lineHeight: 1.5,
+                  }}
+                  onFocus={focusInput}
+                  onBlur={blurInput}
                 />
               </Section>
 
@@ -470,8 +710,10 @@ export default function EditarGastoPage() {
             </>
           )}
 
+          {/* ════════════════════════════════════════ PASO 2 */}
           {paso === 2 && (
             <>
+              {/* Segmentado tipo de división */}
               <div style={{
                 display: 'flex', background: 'var(--color-card-light)', borderRadius: 12,
                 padding: 4, gap: 3, marginBottom: 16,
@@ -481,7 +723,7 @@ export default function EditarGastoPage() {
                   return (
                     <button
                       key={t.id}
-                      onClick={() => cambiarTipoDivision(t.id)}
+                      onClick={() => setTipoDivision(t.id)}
                       style={{
                         flex: 1, textAlign: 'center', padding: '9px 0', borderRadius: 9, border: 'none',
                         background: activo ? 'var(--color-cta)' : 'transparent',
@@ -499,6 +741,7 @@ export default function EditarGastoPage() {
                 })}
               </div>
 
+              {/* Incluir a */}
               <Section>
                 <Label>Incluir a</Label>
                 <div style={{ background: 'var(--color-card)', border: '1px solid var(--color-border)', borderRadius: 18, padding: '4px 16px' }}>
@@ -549,18 +792,19 @@ export default function EditarGastoPage() {
                 {errores.participantes && <ErrorMsg mensaje={errores.participantes} />}
               </Section>
 
+              {/* Inputs de división — exactos/porcentajes */}
               {tipoDivision !== 'igual' && (
                 <Section>
                   <Label>Montos por persona</Label>
                   <div className="division-list">
-                    {participantes.map(pid => {
-                      const persona = personas.find(p => p.id === pid)
+                    {participantes.map(id => {
+                      const persona = personas.find(p => p.id === id)
                       if (!persona) return null
-                      const montoPreview = preview[pid] ?? 0
-                      const divVal = divisionValues.find(d => d.usuario_id === pid)
+                      const montoPreview = preview[id] ?? 0
+                      const divVal = divisionValues.find(d => d.usuario_id === id)
 
                       return (
-                        <div key={pid} style={{
+                        <div key={id} style={{
                           background: 'var(--color-card)', border: '1px solid var(--color-border)',
                           borderRadius: 16, padding: '12px 14px',
                           display: 'flex', alignItems: 'center', gap: 12,
@@ -577,7 +821,7 @@ export default function EditarGastoPage() {
                                 type="text" inputMode="numeric" pattern="[0-9]*"
                                 aria-label={`Monto para ${persona.nombre}`}
                                 value={divVal?.valor || ''}
-                                onChange={e => setDivisionValor(pid, parseFloat(e.target.value) || 0)}
+                                onChange={e => setDivisionValor(id, parseFloat(e.target.value) || 0)}
                                 placeholder="0"
                                 style={{ ...inputBase, height: 38, paddingLeft: 22, paddingRight: 8, fontSize: 14, fontWeight: 600, borderRadius: 10, textAlign: 'right' }}
                                 onFocus={focusInput} onBlur={blurInput}
@@ -592,7 +836,7 @@ export default function EditarGastoPage() {
                                   type="text" inputMode="decimal"
                                   aria-label={`Porcentaje para ${persona.nombre}`}
                                   value={divVal?.valor || ''}
-                                  onChange={e => setDivisionValor(pid, parseFloat(e.target.value) || 0)}
+                                  onChange={e => setDivisionValor(id, parseFloat(e.target.value) || 0)}
                                   placeholder="0"
                                   style={{ ...inputBase, height: 38, paddingRight: 22, paddingLeft: 8, fontSize: 14, fontWeight: 600, borderRadius: 10, textAlign: 'right' }}
                                   onFocus={focusInput} onBlur={blurInput}
@@ -611,6 +855,7 @@ export default function EditarGastoPage() {
                 </Section>
               )}
 
+              {/* Banner de cuadre */}
               <div style={{
                 marginBottom: 16, borderRadius: 14, padding: '14px 16px',
                 display: 'flex', alignItems: 'center', justifyContent: 'space-between',
@@ -639,14 +884,20 @@ export default function EditarGastoPage() {
                 {!guardando && (
                   <svg width="18" height="18" viewBox="0 0 20 20" fill="none"><path d="M4 10l4 4 8-9" stroke="#fff" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" /></svg>
                 )}
-                {guardando ? 'Guardando…' : 'Guardar cambios'}
+                {guardando ? 'Guardando…' : 'Guardar gasto'}
               </BotonCTA>
             </>
           )}
         </main>
       </div>
 
-      {toast && <Toast mensaje={toast.mensaje} tipo={toast.tipo} onClose={() => setToast(null)} />}
+      {toast && (
+        <Toast
+          mensaje={toast.mensaje}
+          tipo={toast.tipo}
+          onClose={() => setToast(null)}
+        />
+      )}
     </div>
   )
 }

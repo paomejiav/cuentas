@@ -1,15 +1,17 @@
 import { supabase } from '@/lib/supabase'
 import type { Categoria } from '@/types/database'
+import type { UsuarioMini } from '@/lib/cuentas'
 
 export type TipoDivision = 'igual' | 'exacto' | 'porcentaje'
 
 export interface DivisionInput {
-  integrante_id: string
+  usuario_id: string
   valor: number // monto exacto, porcentaje, o ignorado si es igual
 }
 
 export interface DatosGasto {
-  grupo_id: string
+  grupo_id: string | null // null = gasto aislado, sin grupo
+  cuenta_id: string | null
   descripcion: string
   monto_total: number
   pagado_por: string
@@ -18,7 +20,7 @@ export interface DatosGasto {
   nota: string
   creado_por: string
   tipo_division: TipoDivision
-  participantes: string[] // ids de integrantes que participan
+  participantes: string[] // ids de usuarios que participan
   divisiones: DivisionInput[] // valores según tipo_division
 }
 
@@ -91,7 +93,7 @@ export function calcularMontosPorPersona(
       montos[id] = i === 0 ? base + residuo : base
     })
   } else if (tipo === 'exacto') {
-    divisiones.forEach(d => { montos[d.integrante_id] = Math.round(d.valor || 0) })
+    divisiones.forEach(d => { montos[d.usuario_id] = Math.round(d.valor || 0) })
   } else {
     // porcentaje
     let distribuido = 0
@@ -99,7 +101,7 @@ export function calcularMontosPorPersona(
       const m = i < divisiones.length - 1
         ? Math.floor(monto * (d.valor || 0) / 100)
         : Math.round(monto) - distribuido
-      montos[d.integrante_id] = m
+      montos[d.usuario_id] = m
       distribuido += m
     })
   }
@@ -109,7 +111,7 @@ export function calcularMontosPorPersona(
 
 // ── Guardar gasto ────────────────────────────────────────────
 
-export async function crearGasto(datos: DatosGasto): Promise<{ ok: true } | { ok: false; error: string }> {
+export async function crearGasto(datos: DatosGasto): Promise<{ ok: true; gastoId: string } | { ok: false; error: string }> {
   const montosPorPersona = calcularMontosPorPersona(
     datos.monto_total,
     datos.tipo_division,
@@ -122,6 +124,7 @@ export async function crearGasto(datos: DatosGasto): Promise<{ ok: true } | { ok
     .from('gastos')
     .insert({
       grupo_id:    datos.grupo_id,
+      cuenta_id:   datos.cuenta_id,
       descripcion: datos.descripcion.trim(),
       monto_total: datos.monto_total,
       pagado_por:  datos.pagado_por,
@@ -140,8 +143,9 @@ export async function crearGasto(datos: DatosGasto): Promise<{ ok: true } | { ok
   // Insertar divisiones
   const divisionesRows = datos.participantes.map(id => ({
     gasto_id:        gasto.id,
-    integrante_id:   id,
+    usuario_id:      id,
     monto_asignado:  montosPorPersona[id] ?? 0,
+    saldado:         false,
   }))
 
   const { error: divError } = await supabase
@@ -154,7 +158,7 @@ export async function crearGasto(datos: DatosGasto): Promise<{ ok: true } | { ok
     return { ok: false, error: 'No se pudieron guardar las divisiones. Intentá de nuevo.' }
   }
 
-  return { ok: true }
+  return { ok: true, gastoId: gasto.id as string }
 }
 
 // ── Editar gasto ─────────────────────────────────────────────
@@ -203,8 +207,9 @@ export async function editarGasto(
 
     const rows = datos.participantes.map(id => ({
       gasto_id:       gastoId,
-      integrante_id:  id,
+      usuario_id:     id,
       monto_asignado: montosPorPersona[id] ?? 0,
+      saldado:        false,
     }))
 
     const { error: divError } = await supabase.from('divisiones').insert(rows)
@@ -229,4 +234,93 @@ export async function eliminarGasto(
 
 function formatCLPInterno(n: number) {
   return '$' + Math.round(n).toLocaleString('es-CL')
+}
+
+// ── Quién puede pagar / participar ──────────────────────────
+// Si el gasto tiene cuenta, se limita a los miembros de esa cuenta.
+// Si no, se limita a los miembros del grupo activo.
+
+export async function listarParticipantesPosibles(opts: {
+  cuentaId: string | null
+  grupoId: string
+}): Promise<UsuarioMini[]> {
+  if (opts.cuentaId) {
+    const { data } = await supabase
+      .from('cuenta_miembros')
+      .select('usuarios ( id, nombre, avatar_color )')
+      .eq('cuenta_id', opts.cuentaId)
+    return ((data ?? []) as unknown as { usuarios: UsuarioMini | null }[])
+      .map(f => f.usuarios)
+      .filter((u): u is UsuarioMini => !!u)
+  }
+
+  const { data } = await supabase
+    .from('grupo_miembros')
+    .select('usuarios ( id, nombre, avatar_color )')
+    .eq('grupo_id', opts.grupoId)
+  return ((data ?? []) as unknown as { usuarios: UsuarioMini | null }[])
+    .map(f => f.usuarios)
+    .filter((u): u is UsuarioMini => !!u)
+}
+
+export interface CuentaMini {
+  id: string
+  nombre: string
+  tipo: string
+  icono: string | null
+}
+
+export async function listarCuentasActivasGrupo(grupoId: string): Promise<CuentaMini[]> {
+  const { data } = await supabase
+    .from('cuentas')
+    .select('id, nombre, tipo, icono')
+    .eq('grupo_id', grupoId)
+    .eq('estado', 'activa')
+    .order('nombre')
+  return (data ?? []) as CuentaMini[]
+}
+
+// ── Detalle completo de un gasto (todas las divisiones, con saldado) ──
+
+export interface DivisionDetalle {
+  id: string
+  usuario_id: string
+  monto_asignado: number
+  saldado: boolean
+  usuario: UsuarioMini | null
+}
+
+export interface GastoDetalleCompleto {
+  id: string
+  grupo_id: string | null // null = gasto aislado, sin grupo
+  cuenta_id: string | null
+  descripcion: string
+  monto_total: number
+  categoria: Categoria
+  fecha: string
+  pagado_por: string
+  pagador: UsuarioMini | null
+  divisiones: DivisionDetalle[]
+}
+
+export async function obtenerGastoConDivisiones(gastoId: string): Promise<GastoDetalleCompleto | null> {
+  const [{ data: gasto }, { data: divs }] = await Promise.all([
+    supabase
+      .from('gastos')
+      .select('id, grupo_id, cuenta_id, descripcion, monto_total, categoria, fecha, pagado_por, usuarios!gastos_pagado_por_fkey ( id, nombre, avatar_color )')
+      .eq('id', gastoId)
+      .single(),
+    supabase
+      .from('divisiones')
+      .select('id, usuario_id, monto_asignado, saldado, usuarios ( id, nombre, avatar_color )')
+      .eq('gasto_id', gastoId),
+  ])
+
+  if (!gasto) return null
+
+  const g = gasto as unknown as Omit<GastoDetalleCompleto, 'pagador' | 'divisiones'> & { usuarios: UsuarioMini | null }
+  const divisiones = ((divs ?? []) as unknown as (Omit<DivisionDetalle, 'usuario'> & { usuarios: UsuarioMini | null })[])
+    .map(d => ({ id: d.id, usuario_id: d.usuario_id, monto_asignado: d.monto_asignado, saldado: d.saldado, usuario: d.usuarios }))
+
+  return { ...g, pagador: g.usuarios, divisiones }
 }

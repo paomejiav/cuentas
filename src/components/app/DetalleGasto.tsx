@@ -4,28 +4,47 @@ import { useEffect, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { Avatar } from '@/components/app/Avatar'
 import { formatCLP } from '@/lib/format'
-import { eliminarGasto } from '@/lib/gastos'
+import { eliminarGasto, obtenerGastoConDivisiones, type GastoDetalleCompleto } from '@/lib/gastos'
 import { CATEGORIA_EMOJI, CATEGORIA_LABEL } from '@/types/database'
-import type { GastoResumen } from '@/lib/historial'
+import { RegistrarPago } from '@/components/app/RegistrarPago'
 
-interface GastoDetalleProps {
-  gasto: GastoResumen
+interface DetalleGastoProps {
+  gastoId: string
   miId: string
   onClose: () => void
   onEliminado: () => void
+  onPagoRegistrado: () => void
 }
 
-export function GastoDetalle({ gasto, miId, onClose, onEliminado }: GastoDetalleProps) {
+/**
+ * Equivalente a GastoDetalle.tsx pero sobre el modelo nuevo (usuario_id,
+ * saldado). GastoDetalle.tsx queda intacto — sigue usándose solo desde
+ * /historial (modelo viejo, todavía sin reconectar).
+ */
+export function DetalleGasto({ gastoId, miId, onClose, onEliminado, onPagoRegistrado }: DetalleGastoProps) {
   const router = useRouter()
   const [visible, setVisible] = useState(false)
+  const [cargando, setCargando] = useState(true)
+  const [gasto, setGasto] = useState<GastoDetalleCompleto | null>(null)
   const [confirmandoEliminar, setConfirmandoEliminar] = useState(false)
   const [eliminando, setEliminando] = useState(false)
+  const [mostrarPago, setMostrarPago] = useState(false)
   const sheetRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
     const t = setTimeout(() => setVisible(true), 10)
     return () => clearTimeout(t)
   }, [])
+
+  useEffect(() => {
+    let activo = true
+    obtenerGastoConDivisiones(gastoId).then(g => {
+      if (!activo) return
+      setGasto(g)
+      setCargando(false)
+    })
+    return () => { activo = false }
+  }, [gastoId])
 
   function cerrar() {
     setVisible(false)
@@ -34,7 +53,7 @@ export function GastoDetalle({ gasto, miId, onClose, onEliminado }: GastoDetalle
 
   async function handleEliminar() {
     setEliminando(true)
-    const result = await eliminarGasto(gasto.id)
+    const result = await eliminarGasto(gastoId)
     setEliminando(false)
     if (result.ok) {
       cerrar()
@@ -42,17 +61,23 @@ export function GastoDetalle({ gasto, miId, onClose, onEliminado }: GastoDetalle
     }
   }
 
+  if (cargando || !gasto) {
+    return (
+      <div style={{ position: 'fixed', inset: 0, zIndex: 60, background: 'rgba(26,26,30,0.45)' }} />
+    )
+  }
+
   const fecha = new Date(gasto.fecha + 'T12:00:00')
   const fechaFormateada = fecha.toLocaleDateString('es-CL', {
     weekday: 'short', day: 'numeric', month: 'short',
   }).replace(/^\w/, c => c.toUpperCase())
 
-  const yo = gasto.divisiones.find(d => d.integrante?.id === miId)
-  const yoPague = gasto.pagador?.id === miId
+  const miDivision = gasto.divisiones.find(d => d.usuario_id === miId)
+  const yoPague = gasto.pagado_por === miId
+  const puedoMarcarPagada = !!miDivision && !miDivision.saldado && !yoPague
 
   return (
     <>
-      {/* Overlay */}
       <div
         onClick={cerrar}
         style={{
@@ -63,7 +88,6 @@ export function GastoDetalle({ gasto, miId, onClose, onEliminado }: GastoDetalle
         }}
       />
 
-      {/* Bottom sheet */}
       <div
         ref={sheetRef}
         style={{
@@ -79,13 +103,11 @@ export function GastoDetalle({ gasto, miId, onClose, onEliminado }: GastoDetalle
           paddingBottom: 'max(24px, env(safe-area-inset-bottom))',
         }}
       >
-        {/* Handle */}
         <div style={{ display: 'flex', justifyContent: 'center', padding: '12px 0 4px' }}>
           <div style={{ width: 40, height: 4, borderRadius: 2, background: 'var(--color-border)' }} />
         </div>
 
         <div style={{ padding: '12px 20px 0' }}>
-          {/* Cabecera: cerrar + título + eliminar */}
           <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 20 }}>
             <button
               onClick={cerrar}
@@ -125,7 +147,6 @@ export function GastoDetalle({ gasto, miId, onClose, onEliminado }: GastoDetalle
             )}
           </div>
 
-          {/* Monto + categoría, centrado */}
           <div style={{ textAlign: 'center', padding: '8px 0 22px' }}>
             <div style={{
               width: 60, height: 60, borderRadius: 18, background: 'var(--tint-cta)',
@@ -149,7 +170,6 @@ export function GastoDetalle({ gasto, miId, onClose, onEliminado }: GastoDetalle
             </div>
           </div>
 
-          {/* Pagado por + fecha */}
           <div style={{ background: 'var(--color-card)', border: '1px solid var(--color-border)', borderRadius: 18, padding: '4px 16px', marginBottom: 22 }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '13px 0', borderBottom: '1px solid var(--color-divider)' }}>
               <Avatar nombre={gasto.pagador?.nombre ?? '?'} color={gasto.pagador?.avatar_color ?? '#A8D8B9'} size={38} />
@@ -178,7 +198,6 @@ export function GastoDetalle({ gasto, miId, onClose, onEliminado }: GastoDetalle
             </div>
           </div>
 
-          {/* División completa */}
           <p style={{
             margin: '0 2px 10px', fontSize: 11, fontWeight: 700, color: 'var(--color-text-muted)',
             fontFamily: 'var(--font-dm-sans), sans-serif', textTransform: 'uppercase', letterSpacing: '0.08em',
@@ -191,19 +210,21 @@ export function GastoDetalle({ gasto, miId, onClose, onEliminado }: GastoDetalle
               .slice()
               .sort((a, b) => b.monto_asignado - a.monto_asignado)
               .map((div, idx, arr) => {
-                const esYo = div.integrante?.id === miId
-                const esPagador = div.integrante?.id === gasto.pagador?.id
+                const esYo = div.usuario_id === miId
+                const esPagador = div.usuario_id === gasto.pagado_por
                 const pill = esPagador
                   ? { label: 'Pagó', color: 'var(--color-positive)', tint: 'var(--color-positive-tint)', border: 'var(--color-positive-border)' }
+                  : div.saldado
+                  ? { label: 'Saldado', color: 'var(--color-neutral)', tint: 'var(--color-neutral-tint)', border: 'var(--color-neutral-border)' }
                   : { label: 'Debe', color: 'var(--color-negative)', tint: 'var(--color-negative-tint)', border: 'var(--color-negative-border)' }
                 return (
-                  <div key={div.integrante?.id} style={{
+                  <div key={div.id} style={{
                     display: 'flex', alignItems: 'center', gap: 12, padding: '12px 0',
                     borderBottom: idx === arr.length - 1 ? 'none' : '1px solid var(--color-divider)',
                   }}>
-                    <Avatar nombre={div.integrante?.nombre ?? '?'} color={div.integrante?.avatar_color ?? '#A8D8B9'} size={34} />
+                    <Avatar nombre={div.usuario?.nombre ?? '?'} color={div.usuario?.avatar_color ?? '#A8D8B9'} size={34} />
                     <span style={{ flex: 1, fontSize: 14, fontWeight: 600, color: 'var(--color-text-primary)', fontFamily: 'var(--font-dm-sans), sans-serif' }}>
-                      {esYo ? 'Tú' : div.integrante?.nombre}
+                      {esYo ? 'Tú' : div.usuario?.nombre}
                     </span>
                     <span style={{
                       display: 'inline-flex', alignItems: 'center', gap: 5, marginRight: 10,
@@ -219,26 +240,42 @@ export function GastoDetalle({ gasto, miId, onClose, onEliminado }: GastoDetalle
               })}
           </div>
 
-          {yo && (
+          {miDivision && (
             <p style={{ margin: '-12px 2px 24px', fontSize: 12, color: 'var(--color-text-muted)', fontFamily: 'var(--font-dm-sans), sans-serif' }}>
-              Tu parte: <strong style={{ color: yoPague ? 'var(--color-positive)' : 'var(--color-negative)' }}>{formatCLP(yo.monto_asignado)}</strong>
+              Tu parte: <strong style={{ color: yoPague ? 'var(--color-positive)' : 'var(--color-negative)' }}>{formatCLP(miDivision.monto_asignado)}</strong>
             </p>
           )}
 
-          {/* Acciones */}
           {!confirmandoEliminar && (
-            <button
-              onClick={() => router.push(`/gastos/${gasto.id}/editar`)}
-              style={{
-                width: '100%', height: 54, borderRadius: 15, border: '1px solid var(--color-border)',
-                background: 'var(--color-surface-white)', color: 'var(--color-text-primary)',
-                fontSize: 15, fontWeight: 700, fontFamily: 'var(--font-dm-sans), sans-serif',
-                cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 9,
-              }}
-            >
-              <svg width="18" height="18" viewBox="0 0 20 20" fill="none"><path d="M4 13.5V16h2.5l8-8-2.5-2.5-8 8z" stroke="var(--color-text-primary)" strokeWidth="1.6" strokeLinejoin="round" /></svg>
-              Editar gasto
-            </button>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+              {puedoMarcarPagada && (
+                <button
+                  onClick={() => setMostrarPago(true)}
+                  style={{
+                    width: '100%', height: 54, borderRadius: 15, border: 'none',
+                    background: 'var(--gradient-cta)', color: 'white',
+                    fontSize: 15, fontWeight: 700, fontFamily: 'var(--font-dm-sans), sans-serif',
+                    cursor: 'pointer', boxShadow: 'var(--shadow-cta)',
+                    display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 9,
+                  }}
+                >
+                  <svg width="18" height="18" viewBox="0 0 20 20" fill="none"><path d="M4 10l4 4 8-9" stroke="#fff" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" /></svg>
+                  Marcar mi parte como pagada
+                </button>
+              )}
+              <button
+                onClick={() => router.push(`/gastos/${gasto.id}/editar`)}
+                style={{
+                  width: '100%', height: 54, borderRadius: 15, border: '1px solid var(--color-border)',
+                  background: 'var(--color-surface-white)', color: 'var(--color-text-primary)',
+                  fontSize: 15, fontWeight: 700, fontFamily: 'var(--font-dm-sans), sans-serif',
+                  cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 9,
+                }}
+              >
+                <svg width="18" height="18" viewBox="0 0 20 20" fill="none"><path d="M4 13.5V16h2.5l8-8-2.5-2.5-8 8z" stroke="var(--color-text-primary)" strokeWidth="1.6" strokeLinejoin="round" /></svg>
+                Editar gasto
+              </button>
+            </div>
           )}
 
           {confirmandoEliminar && (
@@ -274,6 +311,27 @@ export function GastoDetalle({ gasto, miId, onClose, onEliminado }: GastoDetalle
           )}
         </div>
       </div>
+
+      {mostrarPago && miDivision && gasto.pagador && (
+        <RegistrarPago
+          miId={miId}
+          contraparte={gasto.pagador}
+          divisiones={[{
+            division_id: miDivision.id,
+            gasto_id: gasto.id,
+            descripcion: gasto.descripcion,
+            fecha: gasto.fecha,
+            monto_asignado: miDivision.monto_asignado,
+            grupo_id: gasto.grupo_id,
+          }]}
+          onCerrar={() => setMostrarPago(false)}
+          onConfirmado={() => {
+            setMostrarPago(false)
+            cerrar()
+            setTimeout(onPagoRegistrado, 320)
+          }}
+        />
+      )}
     </>
   )
 }

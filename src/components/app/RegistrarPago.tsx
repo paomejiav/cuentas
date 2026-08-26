@@ -1,18 +1,26 @@
 'use client'
 
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { Avatar } from '@/components/app/Avatar'
 import { formatCLP } from '@/lib/format'
-import type { TransferenciaCierre } from '@/lib/cierre'
+import type { MetodoPago } from '@/types/database'
+import type { UsuarioMini } from '@/lib/cuentas'
+import { registrarPagoDirecto, type DivisionASaldar } from '@/lib/pagos'
+import { supabase } from '@/lib/supabase'
 
+// Salda una o varias divisiones puntuales hacia la misma persona — fuera del
+// cierre mensual (liquidación directa) o como acción sobre una transferencia
+// sugerida del cierre (pantalla 12). El componente hace los inserts/updates él
+// mismo vía registrarPagoDirecto.
 interface RegistrarPagoProps {
-  transferencia: TransferenciaCierre
+  divisiones: DivisionASaldar[]
+  contraparte: UsuarioMini
+  onConfirmado: () => void
   miId: string
-  onConfirmar: (fecha: string, metodo: TransferenciaCierre['metodo']) => void
   onCerrar: () => void
 }
 
-const METODOS: { id: TransferenciaCierre['metodo']; label: string; desc: string; icon: React.ReactNode }[] = [
+const METODOS: { id: MetodoPago; label: string; desc: string; icon: React.ReactNode }[] = [
   {
     id: 'transferencia',
     label: 'Transferencia',
@@ -48,13 +56,51 @@ const METODOS: { id: TransferenciaCierre['metodo']; label: string; desc: string;
   },
 ]
 
-export function RegistrarPago({ transferencia, miId, onConfirmar, onCerrar }: RegistrarPagoProps) {
-  const [metodo, setMetodo] = useState<TransferenciaCierre['metodo']>('transferencia')
+function fechaCorta(fechaISO: string): string {
+  return new Date(fechaISO + 'T12:00:00').toLocaleDateString('es-CL', { day: 'numeric', month: 'short' })
+}
 
-  const soyElQuePaga = transferencia.de.id === miId
+export function RegistrarPago(props: RegistrarPagoProps) {
+  const { miId, onCerrar } = props
 
-  function confirmar() {
-    onConfirmar(new Date().toISOString().slice(0, 10), metodo)
+  const [metodo, setMetodo] = useState<MetodoPago>('transferencia')
+  const [guardando, setGuardando] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const [miInfo, setMiInfo] = useState<UsuarioMini | null>(null)
+
+  // No recibimos el nombre/avatar de quien paga por props — lo traemos.
+  useEffect(() => {
+    let activo = true
+    supabase.from('usuarios').select('id, nombre, avatar_color').eq('id', miId).single()
+      .then(({ data }) => { if (activo && data) setMiInfo(data as UsuarioMini) })
+    return () => { activo = false }
+  }, [miId])
+
+  const de = miInfo ?? { id: miId, nombre: 'Tú', avatar_color: '#EDEDF1' }
+  const a = props.contraparte
+  const soyElQuePaga = de.id === miId
+
+  const montoTotal = props.divisiones.reduce((s, d) => s + d.monto_asignado, 0)
+
+  async function confirmar() {
+    const fecha = new Date().toISOString().slice(0, 10)
+
+    setError(null)
+    setGuardando(true)
+    const result = await registrarPagoDirecto({
+      miId,
+      contraparteId: props.contraparte.id,
+      divisiones: props.divisiones,
+      metodo,
+      fecha,
+    })
+    setGuardando(false)
+
+    if (!result.ok) {
+      setError(result.error)
+      return
+    }
+    props.onConfirmado()
   }
 
   return (
@@ -93,9 +139,9 @@ export function RegistrarPago({ transferencia, miId, onConfirmar, onCerrar }: Re
         <main style={{ flex: 1, padding: '0 var(--page-px)' }}>
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 16, margin: '26px 0 8px' }}>
             <div style={{ textAlign: 'center' }}>
-              <Avatar nombre={transferencia.de.nombre} color={transferencia.de.avatar_color} size={56} />
+              <Avatar nombre={de.nombre} color={de.avatar_color} size={56} />
               <p style={{ margin: '8px 0 0', fontSize: 12, fontWeight: 700, color: 'var(--color-text-primary)', fontFamily: 'var(--font-dm-sans), sans-serif' }}>
-                {transferencia.de.nombre}
+                {de.nombre}
               </p>
               <p style={{ margin: 0, fontSize: 11, color: 'var(--color-text-muted)', fontFamily: 'var(--font-dm-sans), sans-serif' }}>
                 {soyElQuePaga ? 'Tú' : 'Paga'}
@@ -105,12 +151,12 @@ export function RegistrarPago({ transferencia, miId, onConfirmar, onCerrar }: Re
               <path d="M2 9h28m0 0l-6-6m6 6l-6 6" stroke="var(--color-cta)" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
             </svg>
             <div style={{ textAlign: 'center' }}>
-              <Avatar nombre={transferencia.a.nombre} color={transferencia.a.avatar_color} size={56} />
+              <Avatar nombre={a.nombre} color={a.avatar_color} size={56} />
               <p style={{ margin: '8px 0 0', fontSize: 12, fontWeight: 700, color: 'var(--color-text-primary)', fontFamily: 'var(--font-dm-sans), sans-serif' }}>
-                {transferencia.a.nombre}
+                {a.nombre}
               </p>
               <p style={{ margin: 0, fontSize: 11, color: 'var(--color-text-muted)', fontFamily: 'var(--font-dm-sans), sans-serif' }}>
-                {transferencia.a.id === miId ? 'Tú' : 'Recibe'}
+                {a.id === miId ? 'Tú' : 'Recibe'}
               </p>
             </div>
           </div>
@@ -120,14 +166,47 @@ export function RegistrarPago({ transferencia, miId, onConfirmar, onCerrar }: Re
             borderRadius: 18, padding: 22, marginTop: 18,
           }}>
             <p style={{ margin: 0, fontSize: 12, color: 'var(--color-neutral)', fontFamily: 'var(--font-dm-sans), sans-serif' }}>
-              Monto a pagar
+              Vas a saldar
             </p>
             <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'center', gap: 6, marginTop: 6 }}>
               <span style={{ fontFamily: 'var(--font-sora), sans-serif', fontSize: 40, fontWeight: 800, letterSpacing: '-0.03em', color: 'var(--color-text-primary)' }}>
-                {formatCLP(transferencia.monto)}
+                {formatCLP(montoTotal)}
               </span>
               <span style={{ fontSize: 15, fontWeight: 600, color: 'var(--color-text-muted)' }}>CLP</span>
             </div>
+          </div>
+
+          <p style={{
+            margin: '22px 2px 10px', fontSize: 11, fontWeight: 700, color: 'var(--color-text-muted)',
+            fontFamily: 'var(--font-dm-sans), sans-serif', textTransform: 'uppercase', letterSpacing: '0.08em',
+          }}>
+            Gastos incluidos · {props.divisiones.length}
+          </p>
+          <div style={{ background: 'var(--color-card)', border: '1px solid var(--color-border)', borderRadius: 18, padding: '4px 16px' }}>
+            {props.divisiones.map((d, idx) => (
+              <div key={d.division_id} style={{
+                display: 'flex', alignItems: 'center', gap: 12, padding: '13px 0',
+                borderBottom: idx === props.divisiones.length - 1 ? 'none' : '1px solid var(--color-divider)',
+              }}>
+                <div style={{
+                  width: 38, height: 38, borderRadius: 12, background: 'var(--tint-cta)',
+                  display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 16, flexShrink: 0,
+                }}>
+                  🧾
+                </div>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ fontSize: 13.5, fontWeight: 700, color: 'var(--color-text-primary)', fontFamily: 'var(--font-dm-sans), sans-serif', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                    {d.descripcion}
+                  </div>
+                  <div style={{ fontSize: 11.5, color: 'var(--color-neutral)', marginTop: 1, fontFamily: 'var(--font-dm-sans), sans-serif' }}>
+                    {fechaCorta(d.fecha)}
+                  </div>
+                </div>
+                <span style={{ fontFamily: 'var(--font-sora), sans-serif', fontSize: 14, fontWeight: 700, color: 'var(--color-text-primary)', flexShrink: 0 }}>
+                  {formatCLP(d.monto_asignado)}
+                </span>
+              </div>
+            ))}
           </div>
 
           <p style={{
@@ -182,21 +261,29 @@ export function RegistrarPago({ transferencia, miId, onConfirmar, onCerrar }: Re
               )
             })}
           </div>
+
+          {error && (
+            <div style={{ marginTop: 14, borderRadius: 12, padding: '10px 14px', background: 'var(--color-negative-tint)' }}>
+              <p style={{ margin: 0, fontSize: 13, color: 'var(--color-negative)', fontFamily: 'var(--font-dm-sans), sans-serif', lineHeight: 1.4 }}>{error}</p>
+            </div>
+          )}
         </main>
 
         <div style={{ padding: '16px var(--page-px) max(22px, env(safe-area-inset-bottom))' }}>
           <button
             onClick={confirmar}
+            disabled={guardando}
             style={{
               width: '100%', height: 54, borderRadius: 15, border: 'none',
               background: 'var(--gradient-cta)', color: 'white',
               fontSize: 15.5, fontWeight: 700, fontFamily: 'var(--font-dm-sans), sans-serif',
-              cursor: 'pointer', boxShadow: 'var(--shadow-cta)',
+              cursor: guardando ? 'default' : 'pointer', boxShadow: 'var(--shadow-cta)',
+              opacity: guardando ? 0.6 : 1,
               display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
             }}
           >
             <svg width="18" height="18" viewBox="0 0 20 20" fill="none"><path d="M4 10l4 4 8-9" stroke="#fff" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" /></svg>
-            Confirmar pago
+            {guardando ? 'Guardando…' : 'Confirmar pago'}
           </button>
         </div>
       </div>

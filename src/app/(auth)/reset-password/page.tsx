@@ -183,7 +183,10 @@ function ResetPasswordInner() {
       return
     }
 
-    if (!query.get('code')) {
+    const tokenHash = query.get('token_hash')
+    const type = query.get('type')
+
+    if (!tokenHash || type !== 'recovery') {
       // Nadie llegó acá con un link real del correo.
       setEstado('invalido')
       return
@@ -191,24 +194,25 @@ function ResetPasswordInner() {
 
     let activo = true
 
-    // El cliente (@supabase/ssr, flujo PKCE) detecta el ?code= de la URL
-    // solo y lo intercambia por una sesión temporal — no hace falta leer
-    // tokens a mano. Cuando termina, dispara este evento.
-    const { data: { subscription } } = supabase.auth.onAuthStateChange(event => {
+    // Camino explícito: canjeamos el token_hash del email por una sesión de
+    // recuperación nosotros mismos, en vez de esperar pasivamente el evento
+    // PASSWORD_RECOVERY del intercambio PKCE automático — ese dependía del
+    // code_verifier guardado en el navegador que pidió el reset, y fallaba
+    // ("code challenge does not match previously saved code verifier") si el
+    // link se abría en otro navegador o dispositivo (in-app browser, etc).
+    supabase.auth.verifyOtp({ token_hash: tokenHash, type: 'recovery' }).then(({ error }) => {
       if (!activo) return
-      if (event === 'PASSWORD_RECOVERY') setEstado('listo')
+      setEstado(error ? 'invalido' : 'listo')
     })
 
-    // Resguardo: si el intercambio falla en silencio (código ya usado, por
-    // ejemplo) y el evento nunca llega, no dejamos la pantalla cargando
-    // para siempre.
+    // Resguardo: si verifyOtp nunca resuelve, no dejamos la pantalla
+    // cargando para siempre.
     const timeout = setTimeout(() => {
       setEstado(prev => (prev === 'procesando' ? 'invalido' : prev))
     }, 8000)
 
     return () => {
       activo = false
-      subscription.unsubscribe()
       clearTimeout(timeout)
     }
   }, [])

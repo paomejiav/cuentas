@@ -195,7 +195,9 @@ function CuentasListadoInner() {
               Cuentas compartidas
             </div>
           </div>
-          <Avatar nombre={nombreUsuario || '?'} color={avatarColor} size={42} />
+          <Link href="/perfil" aria-label="Perfil" style={{ display: 'flex', flexShrink: 0 }}>
+            <Avatar nombre={nombreUsuario || '?'} color={avatarColor} size={42} />
+          </Link>
         </div>
 
         {cuentas.length > 0 && (

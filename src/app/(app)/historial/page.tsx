@@ -395,6 +395,8 @@ function HistorialInner() {
     )
   }
 
+  const miPerfil = personas.find(p => p.id === usuarioId)
+
   return (
     <main style={{ minHeight: '100dvh', background: 'var(--color-bg)', paddingBottom: 96 }}>
       <div style={{ maxWidth: 440, margin: '0 auto', padding: '0 18px', paddingTop: 'max(20px, env(safe-area-inset-top, 0px))' }}>
@@ -403,29 +405,34 @@ function HistorialInner() {
           <div style={{ fontFamily: F_HEAD, fontSize: 23, fontWeight: 700, letterSpacing: '-0.01em', color: 'var(--color-text-primary)' }}>
             Historial
           </div>
-          <button
-            onClick={abrirFiltro}
-            aria-label="Filtrar"
-            style={{
-              position: 'relative', width: 40, height: 40, borderRadius: 12, border: '1px solid var(--color-border)',
-              background: 'var(--color-surface-white)', display: 'flex', alignItems: 'center', justifyContent: 'center',
-              cursor: 'pointer', padding: 0,
-            }}
-          >
-            <svg width="18" height="18" viewBox="0 0 20 20" fill="none">
-              <path d="M3 5h14M6 10h8M9 15h2" stroke="var(--color-text-secondary)" strokeWidth="1.6" strokeLinecap="round" />
-            </svg>
-            {countActivo > 0 && (
-              <span style={{
-                position: 'absolute', top: -5, right: -5, minWidth: 18, height: 18, borderRadius: 100,
-                background: 'var(--color-cta)', color: '#fff', fontSize: 10.5, fontWeight: 700,
-                display: 'flex', alignItems: 'center', justifyContent: 'center', border: '2px solid var(--color-bg)',
-                fontFamily: F_BODY, padding: '0 2px',
-              }}>
-                {countActivo}
-              </span>
-            )}
-          </button>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+            <button
+              onClick={abrirFiltro}
+              aria-label="Filtrar"
+              style={{
+                position: 'relative', width: 40, height: 40, borderRadius: 12, border: '1px solid var(--color-border)',
+                background: 'var(--color-surface-white)', display: 'flex', alignItems: 'center', justifyContent: 'center',
+                cursor: 'pointer', padding: 0,
+              }}
+            >
+              <svg width="18" height="18" viewBox="0 0 20 20" fill="none">
+                <path d="M3 5h14M6 10h8M9 15h2" stroke="var(--color-text-secondary)" strokeWidth="1.6" strokeLinecap="round" />
+              </svg>
+              {countActivo > 0 && (
+                <span style={{
+                  position: 'absolute', top: -5, right: -5, minWidth: 18, height: 18, borderRadius: 100,
+                  background: 'var(--color-cta)', color: '#fff', fontSize: 10.5, fontWeight: 700,
+                  display: 'flex', alignItems: 'center', justifyContent: 'center', border: '2px solid var(--color-bg)',
+                  fontFamily: F_BODY, padding: '0 2px',
+                }}>
+                  {countActivo}
+                </span>
+              )}
+            </button>
+            <Link href="/perfil" aria-label="Perfil" style={{ display: 'flex', flexShrink: 0 }}>
+              <Avatar nombre={miPerfil?.nombre || '?'} color={miPerfil?.avatar_color || '#A8D8B9'} size={42} />
+            </Link>
+          </div>
         </div>
 
         <div style={{ display: 'flex', gap: 8, marginBottom: countActivo > 0 ? 12 : 16, flexWrap: 'wrap' }}>

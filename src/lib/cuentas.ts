@@ -349,14 +349,18 @@ export async function listarMiembrosGrupoParaCuenta(
 // ── Contactos compartidos (para gastos aislados, sin grupo) ──────
 //
 // Unión de todas las personas con las que el usuario comparte al menos un
-// grupo — no solo el grupo activo. Sin duplicados, sin incluirse a sí mismo
+// grupo donde su membresía sigue activa — no solo el grupo activo, pero
+// tampoco grupos que ya abandonó. Sin duplicados, sin incluirse a sí mismo
 // (un gasto aislado se arma entre "yo" + estos contactos; el "yo" se agrega
-// aparte en el punto de uso, ver obtenerUsuarioMini).
+// aparte en el punto de uso, ver obtenerUsuarioMini). También excluye a
+// quienes hayan salido de esos grupos — alguien que ya no pertenece no es
+// candidato para un gasto aislado nuevo.
 export async function listarContactosCompartidos(usuarioId: string): Promise<UsuarioMini[]> {
   const { data: misGrupos } = await supabase
     .from('grupo_miembros')
     .select('grupo_id')
     .eq('usuario_id', usuarioId)
+    .eq('activo', true)
 
   const grupoIds = (misGrupos ?? []).map(g => g.grupo_id as string)
   if (grupoIds.length === 0) return []
@@ -366,6 +370,7 @@ export async function listarContactosCompartidos(usuarioId: string): Promise<Usu
     .select('usuarios ( id, nombre, avatar_color )')
     .in('grupo_id', grupoIds)
     .neq('usuario_id', usuarioId)
+    .eq('activo', true)
 
   const vistos = new Set<string>()
   const contactos: UsuarioMini[] = []

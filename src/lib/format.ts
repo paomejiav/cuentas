@@ -11,3 +11,7 @@ export function formatearTiempoRelativo(fechaISO: string): string {
   const dias = Math.floor(horas / 24)
   return `hace ${dias} d`
 }
+
+/** Nombre del mes en español, minúsculas — "Se sumó en marzo" / "Salió en agosto" */
+export const mesEnMinusculas = (fechaISO: string): string =>
+  new Date(fechaISO).toLocaleDateString('es-CL', { month: 'long' })

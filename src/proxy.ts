@@ -39,6 +39,14 @@ export async function proxy(request: NextRequest) {
     return response
   }
 
+  // Alguien que llega desde el link del correo todavía no tiene una sesión
+  // "normal" — el intercambio del código de recuperación pasa recién en el
+  // cliente, en esta misma pantalla. A diferencia de /login, no redirige ni
+  // aunque ya haya sesión (podría estar cambiando su contraseña logueada).
+  if (pathname.startsWith('/reset-password')) {
+    return response
+  }
+
   if (!user) {
     const loginUrl = new URL('/login', request.url)
     loginUrl.searchParams.set('redirect', pathname)

@@ -6,7 +6,7 @@ import { supabase } from '@/lib/supabase'
 import { Avatar } from '@/components/app/Avatar'
 import type { AuthError } from '@supabase/supabase-js'
 
-type Vista = 'onboarding' | 'login' | 'signup' | 'revisa-email'
+type Vista = 'onboarding' | 'login' | 'signup' | 'revisa-email' | 'recuperar' | 'recuperar-enviado'
 
 const F_BODY = 'var(--font-dm-sans), sans-serif'
 const F_HEAD = 'var(--font-sora), sans-serif'
@@ -234,12 +234,18 @@ function LoginInner() {
   const [verSignupPassword, setVerSignupPassword] = useState(false)
   const [verConfirmPassword, setVerConfirmPassword] = useState(false)
 
+  // ── Recuperar contraseña ──
+  const [recuperarEmail, setRecuperarEmail] = useState('')
+  const [recuperarError, setRecuperarError] = useState<string | null>(null)
+  const [emailRecuperacion, setEmailRecuperacion] = useState('')
+
   function irA(v: Vista) {
     setVista(v)
     setLoginError(null)
     setLoginNoConfirmado(false)
     setReenviado(false)
     setSignupError(null)
+    setRecuperarError(null)
   }
 
   async function handleLogin(e: React.FormEvent<HTMLFormElement>) {
@@ -341,6 +347,47 @@ function LoginInner() {
       setReenviado(true)
     } finally {
       setReenviando(false)
+    }
+  }
+
+  async function handleReenviarRecuperacion() {
+    setReenviando(true)
+    setReenviado(false)
+    try {
+      await supabase.auth.resetPasswordForEmail(emailRecuperacion, {
+        redirectTo: `${window.location.origin}/reset-password`,
+      })
+      setReenviado(true)
+    } finally {
+      setReenviando(false)
+    }
+  }
+
+  async function handleRecuperar(e: React.FormEvent) {
+    e.preventDefault()
+    setRecuperarError(null)
+
+    const email = recuperarEmail.trim()
+    if (!EMAIL_RE.test(email)) { setRecuperarError('Ingresá un email válido.'); return }
+
+    setLoading(true)
+    try {
+      // Supabase no distingue "email no existe" de "listo, enviado" — por
+      // diseño, para no dejar adivinar qué emails tienen cuenta. Mostramos
+      // la confirmación siempre que la llamada no falle por un error real.
+      const { error } = await supabase.auth.resetPasswordForEmail(email, {
+        redirectTo: `${window.location.origin}/reset-password`,
+      })
+      if (error) {
+        setRecuperarError('No pudimos enviar el link. Intentá de nuevo.')
+        return
+      }
+      setEmailRecuperacion(email)
+      setVista('recuperar-enviado')
+    } catch {
+      setRecuperarError('Error de conexión. Verificá tu internet e intentá de nuevo.')
+    } finally {
+      setLoading(false)
     }
   }
 
@@ -447,10 +494,10 @@ function LoginInner() {
           </>
         )}
 
-        {(vista === 'login' || vista === 'signup') && (
+        {(vista === 'login' || vista === 'signup' || vista === 'recuperar') && (
           <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 22 }}>
             <button
-              onClick={() => irA('onboarding')}
+              onClick={() => irA(vista === 'recuperar' ? 'login' : 'onboarding')}
               aria-label="Volver"
               style={{
                 width: 42, height: 42, borderRadius: 13, background: 'var(--color-surface-white)',
@@ -464,10 +511,10 @@ function LoginInner() {
             </button>
             <div>
               <div style={{ fontFamily: F_HEAD, fontSize: 19, fontWeight: 700, letterSpacing: '-0.01em', color: 'var(--color-text-primary)' }}>
-                {vista === 'login' ? 'Inicia sesión' : 'Crea tu cuenta'}
+                {vista === 'login' ? 'Inicia sesión' : vista === 'signup' ? 'Crea tu cuenta' : 'Recuperar contraseña'}
               </div>
               <p style={{ margin: '2px 0 0', fontSize: 12.5, color: 'var(--color-text-secondary)', fontFamily: F_BODY }}>
-                {vista === 'login' ? 'Entrá con tu email y contraseña.' : 'Empieza a repartir gastos en menos de un minuto.'}
+                {vista === 'login' ? 'Entrá con tu email y contraseña.' : vista === 'signup' ? 'Empieza a repartir gastos en menos de un minuto.' : 'Te mandamos un link a tu correo para elegir una nueva.'}
               </p>
             </div>
           </div>
@@ -500,6 +547,17 @@ function LoginInner() {
               onChange={e => setLoginPassword(e.target.value)}
               rightSlot={<BotonOjo visible={verLoginPassword} onClick={() => setVerLoginPassword(v => !v)} />}
             />
+
+            <button
+              type="button"
+              onClick={() => irA('recuperar')}
+              style={{
+                alignSelf: 'flex-end', background: 'none', border: 'none', padding: 0, cursor: 'pointer',
+                fontSize: 12.5, fontWeight: 600, color: 'var(--color-cta)', fontFamily: F_BODY, marginTop: -4,
+              }}
+            >
+              ¿Olvidaste tu contraseña?
+            </button>
 
             {loginError && (
               <ErrorMsg
@@ -639,6 +697,73 @@ function LoginInner() {
               style={{ ...btnSecondary, width: 'auto', padding: '0 20px' }}
             >
               {reenviando ? 'Enviando…' : reenviado ? 'Enviado ✓' : '¿No te llegó? Reenviar email'}
+            </PressBtn>
+
+            <button
+              onClick={() => irA('login')}
+              style={{
+                marginTop: 4, background: 'none', border: 'none', cursor: 'pointer',
+                fontSize: 13.5, color: 'var(--color-text-secondary)', fontFamily: F_BODY, textDecoration: 'underline',
+              }}
+            >
+              Volver a iniciar sesión
+            </button>
+          </div>
+        )}
+
+        {/* ─── RECUPERAR CONTRASEÑA ─── */}
+        {vista === 'recuperar' && (
+          <form onSubmit={handleRecuperar} style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+            <CampoTexto
+              id="recuperar-email"
+              label="Correo"
+              icon={<IconoCorreo />}
+              type="email"
+              autoComplete="email"
+              autoFocus
+              placeholder="tu@email.com"
+              value={recuperarEmail}
+              onChange={e => setRecuperarEmail(e.target.value)}
+            />
+
+            {recuperarError && <ErrorMsg>{recuperarError}</ErrorMsg>}
+
+            <PressBtn
+              type="submit"
+              style={{ ...btnPrimary, opacity: loading ? 0.5 : 1, marginTop: 4 }}
+              disabled={loading}
+            >
+              {loading ? 'Enviando…' : 'Enviar link de recuperación'}
+            </PressBtn>
+          </form>
+        )}
+
+        {/* ─── LINK DE RECUPERACIÓN ENVIADO ─── */}
+        {vista === 'recuperar-enviado' && (
+          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 16, textAlign: 'center' }}>
+            <div style={{
+              width: 64, height: 64, borderRadius: '50%', background: 'var(--color-surface-white)',
+              border: '1px solid var(--color-border)',
+              display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 28,
+            }}>
+              ✉️
+            </div>
+            <div>
+              <h2 style={{ margin: 0, fontSize: 22, fontFamily: F_HEAD, fontWeight: 800, letterSpacing: '-0.02em', color: 'var(--color-text-primary)' }}>
+                Revisá tu correo
+              </h2>
+              <p style={{ margin: '10px 0 0', fontSize: 14, lineHeight: 1.5, color: 'var(--color-text-secondary)', fontFamily: F_BODY }}>
+                Si hay una cuenta con <strong style={{ color: 'var(--color-text-primary)' }}>{emailRecuperacion}</strong>, te mandamos un link para elegir una contraseña nueva.
+              </p>
+            </div>
+
+            <PressBtn
+              type="button"
+              onClick={handleReenviarRecuperacion}
+              disabled={reenviando}
+              style={{ ...btnSecondary, width: 'auto', padding: '0 20px' }}
+            >
+              {reenviando ? 'Enviando…' : reenviado ? 'Enviado ✓' : '¿No te llegó? Reenviar link'}
             </PressBtn>
 
             <button

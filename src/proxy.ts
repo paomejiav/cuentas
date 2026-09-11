@@ -47,6 +47,14 @@ export async function proxy(request: NextRequest) {
     return response
   }
 
+  // Mismo caso que /reset-password, pero para la confirmación de registro:
+  // el link de la plantilla "Confirm signup" apunta a "/" con
+  // ?token_hash=&type=signup, y todavía no hay sesión — el canje pasa
+  // recién en el cliente, en esta misma pantalla.
+  if (pathname === '/' && request.nextUrl.searchParams.get('type') === 'signup' && request.nextUrl.searchParams.get('token_hash')) {
+    return response
+  }
+
   if (!user) {
     const loginUrl = new URL('/login', request.url)
     loginUrl.searchParams.set('redirect', pathname)

@@ -21,7 +21,7 @@ interface GrupoRpc {
   creado_en: string
 }
 
-type Vista = 'cargando' | 'elegir-grupo' | 'dashboard' | 'vacio' | 'crear' | 'unirse' | 'exito'
+type Vista = 'cargando' | 'elegir-grupo' | 'dashboard' | 'vacio' | 'crear' | 'unirse' | 'exito' | 'link-invalido'
 
 const SUGERENCIAS = [
   { emoji: '🏖️', label: 'Viaje', prefill: 'Viaje a ' },
@@ -354,6 +354,25 @@ function InicioPageInner() {
     let activo = true
 
     async function cargar() {
+      // Link de confirmación de registro (plantilla "Confirm signup" en
+      // Supabase, apunta acá con ?token_hash=&type=signup) — canjeamos el
+      // token nosotros mismos, en vez de depender del intercambio PKCE
+      // automático, que falla si el link se abre en un navegador o
+      // dispositivo distinto al que hizo el registro.
+      const tokenHash = params.get('token_hash')
+      const tipoParam = params.get('type')
+      if (tokenHash && tipoParam === 'signup') {
+        const { error } = await supabase.auth.verifyOtp({ token_hash: tokenHash, type: 'signup' })
+        if (!activo) return
+        if (error) { setVista('link-invalido'); return }
+        // Limpiamos los params para que un refresh no vuelva a canjear el
+        // mismo token_hash (ya usado). El cambio de `params` dispara este
+        // mismo efecto de nuevo, esta vez sin token_hash, y sigue directo
+        // por el flujo normal de acá abajo con la sesión ya creada.
+        router.replace('/')
+        return
+      }
+
       const { data: { user } } = await supabase.auth.getUser()
       if (!user) { router.replace('/login'); return }
 
@@ -497,6 +516,29 @@ function InicioPageInner() {
           <p style={{ fontSize: 13.5, color: 'var(--color-text-secondary)', fontFamily: F_BODY, marginTop: 24 }}>
             Cargando…
           </p>
+        )}
+
+        {/* ─── Link de confirmación de registro vencido/ya usado ─── */}
+        {vista === 'link-invalido' && (
+          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 16, textAlign: 'center', paddingTop: 40 }}>
+            <div style={{
+              width: 64, height: 64, borderRadius: '50%', background: 'var(--color-surface-white)',
+              border: '1px solid var(--color-border)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 28,
+            }}>
+              ⚠️
+            </div>
+            <div>
+              <h2 style={{ margin: 0, fontFamily: F_HEAD, fontSize: 22, fontWeight: 800, letterSpacing: '-0.02em', color: 'var(--color-text-primary)' }}>
+                Este link ya no es válido
+              </h2>
+              <p style={{ margin: '10px 0 0', fontSize: 14, lineHeight: 1.5, color: 'var(--color-text-secondary)', fontFamily: F_BODY }}>
+                Puede haber expirado o ya haberse usado. Volvé a intentar el registro desde el login.
+              </p>
+            </div>
+            <BotonPrimario onClick={() => router.replace('/login')}>
+              Volver al login
+            </BotonPrimario>
+          </div>
         )}
 
         {/* ─── Selector de grupo activo (2+ grupos) ─── */}

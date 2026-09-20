@@ -55,6 +55,13 @@ export async function proxy(request: NextRequest) {
     return response
   }
 
+  // El enlace "Enlace" de una cuenta es público a propósito — regla de
+  // negocio: cualquiera puede abrirlo, tenga o no acceso a esa cuenta o al
+  // grupo, y ahí adentro se le explica qué hacer según su situación.
+  if (pathname.startsWith('/cuentas/') && pathname.endsWith('/acceso')) {
+    return response
+  }
+
   if (!user) {
     const loginUrl = new URL('/login', request.url)
     loginUrl.searchParams.set('redirect', pathname)

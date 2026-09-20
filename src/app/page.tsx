@@ -8,6 +8,7 @@ import { Avatar } from '@/components/app/Avatar'
 import { resolverGrupoActivo, type GrupoOpcion } from '@/lib/grupo-activo'
 import { calcularSaldosGrupo, obtenerResumenGastosGrupo, type SaldoIntegrante, type ResumenGastosGrupo } from '@/lib/cuentas'
 import { formatCLP, formatearTiempoRelativo } from '@/lib/format'
+import { compartirOCopiar } from '@/lib/compartir'
 
 const F_HEAD = 'var(--font-sora), sans-serif'
 const F_BODY = 'var(--font-dm-sans), sans-serif'
@@ -484,18 +485,11 @@ function InicioPageInner() {
   async function handleCompartir() {
     if (!grupoConfirmado) return
     const texto = `Sumate a "${grupoConfirmado.nombre}" en Better than Split con el código ${grupoConfirmado.codigo_invitacion}`
-    if (navigator.share) {
-      try {
-        await navigator.share({ title: 'Better than Split', text: texto })
-        return
-      } catch {
-        // el usuario canceló el share sheet, no hacemos nada más
-        return
-      }
+    const copiado = await compartirOCopiar({ title: 'Better than Split', text: texto })
+    if (copiado) {
+      setCompartido(true)
+      setTimeout(() => setCompartido(false), 2000)
     }
-    await navigator.clipboard.writeText(texto)
-    setCompartido(true)
-    setTimeout(() => setCompartido(false), 2000)
   }
 
   function handleIrAlGrupo() {

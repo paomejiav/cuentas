@@ -88,6 +88,27 @@ export async function salirDeGrupo(grupoId: string, nuevoAdminId?: string): Prom
   return { error: error ? error.message : null }
 }
 
+export async function cambiarRolMiembro(
+  grupoId: string,
+  usuarioId: string,
+  nuevoRol: 'admin' | 'miembro'
+): Promise<{ error: string | null }> {
+  const { error } = await supabase.rpc('cambiar_rol_miembro', {
+    p_grupo_id: grupoId,
+    p_usuario_id: usuarioId,
+    p_nuevo_rol: nuevoRol,
+  })
+  return { error: error ? error.message : null }
+}
+
+export async function sacarMiembro(grupoId: string, usuarioId: string): Promise<{ error: string | null }> {
+  const { error } = await supabase.rpc('sacar_miembro', {
+    p_grupo_id: grupoId,
+    p_usuario_id: usuarioId,
+  })
+  return { error: error ? error.message : null }
+}
+
 // ============================================================
 // Perfil
 // ============================================================

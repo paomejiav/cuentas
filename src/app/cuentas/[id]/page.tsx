@@ -12,6 +12,7 @@ import {
 import { CATEGORIA_EMOJI } from '@/types/database'
 import type { Categoria } from '@/types/database'
 import { formatCLP } from '@/lib/format'
+import { compartirOCopiar } from '@/lib/compartir'
 import { Avatar } from '@/components/app/Avatar'
 import { DetalleGasto } from '@/components/app/DetalleGasto'
 
@@ -39,6 +40,7 @@ export default function DetalleCuentaPage({ params }: { params: Promise<{ id: st
   const [agregando, setAgregando] = useState(false)
 
   const [gastoAbierto, setGastoAbierto] = useState<string | null>(null)
+  const [enlaceCopiado, setEnlaceCopiado] = useState(false)
 
   async function cargarTodo(cuentaId: string, uid: string) {
     const c = await obtenerCuenta(cuentaId)
@@ -90,6 +92,17 @@ export default function DetalleCuentaPage({ params }: { params: Promise<{ id: st
       else next.add(idm)
       return next
     })
+  }
+
+  async function handleCompartirEnlace() {
+    if (!cuenta) return
+    const url = `${window.location.origin}/cuentas/${cuenta.id}/acceso`
+    const texto = `Entrá a "${cuenta.nombre}" en Better than Split: ${url}`
+    const copiado = await compartirOCopiar({ title: 'Better than Split', text: texto, url })
+    if (copiado) {
+      setEnlaceCopiado(true)
+      setTimeout(() => setEnlaceCopiado(false), 2000)
+    }
   }
 
   async function confirmarAgregar() {
@@ -207,6 +220,30 @@ export default function DetalleCuentaPage({ params }: { params: Promise<{ id: st
             </button>
           )}
         </div>
+
+        <button
+          type="button"
+          onClick={handleCompartirEnlace}
+          style={{
+            display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 9, marginBottom: 12,
+            height: 46, borderRadius: 15, background: 'var(--color-surface-white)', border: '1px solid var(--color-border)',
+            cursor: 'pointer', width: '100%',
+          }}
+        >
+          <svg width="16" height="16" viewBox="0 0 18 18" fill="none">
+            {enlaceCopiado ? (
+              <path d="M4 9.5l3 3 7-7" stroke="var(--color-positive)" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+            ) : (
+              <path d="M13 6a2 2 0 10-1.9-2.6L7 5.6a2 2 0 100 2.8l4.1 2.2A2 2 0 1013 10" stroke="var(--color-text-secondary)" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+            )}
+          </svg>
+          <span style={{
+            fontSize: 13.5, fontFamily: F_BODY, fontWeight: enlaceCopiado ? 700 : 400,
+            color: enlaceCopiado ? 'var(--color-positive)' : 'var(--color-text-secondary)',
+          }}>
+            {enlaceCopiado ? 'Copiado ✓' : 'Enlace'}
+          </span>
+        </button>
 
         {mostrarAgregar && (
           <div style={{ background: 'var(--color-surface-white)', border: '1px solid var(--color-border)', borderRadius: 16, padding: 14, marginBottom: 12 }}>

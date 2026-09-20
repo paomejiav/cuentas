@@ -393,3 +393,18 @@ export async function obtenerUsuarioMini(usuarioId: string): Promise<UsuarioMini
     .single()
   return (data as UsuarioMini | null) ?? null
 }
+
+// ── Acceso a una cuenta vía enlace (pantalla /cuentas/[id]/acceso) ──────
+
+export interface AccesoCuenta {
+  existe: boolean
+  tiene_acceso: boolean
+  es_miembro_del_grupo: boolean
+  nombre_cuenta: string | null
+  nombre_grupo: string | null
+}
+
+export async function verificarAccesoCuenta(cuentaId: string): Promise<AccesoCuenta | null> {
+  const { data } = await supabase.rpc('verificar_acceso_cuenta', { p_cuenta_id: cuentaId }).single()
+  return (data as AccesoCuenta | null) ?? null
+}

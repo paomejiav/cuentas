@@ -279,7 +279,10 @@ function LoginInner() {
         setLoginNoConfirmado(noConfirmado)
         return
       }
-      router.replace('/')
+      // proxy.ts arma este param al rebotar desde una ruta protegida —
+      // solo aceptamos rutas relativas propias, nunca una URL externa.
+      const redirect = params.get('redirect')
+      router.replace(redirect && redirect.startsWith('/') && !redirect.startsWith('//') ? redirect : '/')
     } catch {
       setLoginError('Error de conexión. Verificá tu internet e intentá de nuevo.')
     } finally {

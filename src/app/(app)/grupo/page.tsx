@@ -5,7 +5,7 @@ import { useRouter, useSearchParams } from 'next/navigation'
 import Link from 'next/link'
 import { supabase } from '@/lib/supabase'
 import { resolverGrupoActivo, type GrupoOpcion } from '@/lib/grupo-activo'
-import { obtenerDetalleGrupo, actualizarNombreGrupo, salirDeGrupo, type DetalleGrupo, type IntegranteActivo } from '@/lib/grupo'
+import { obtenerDetalleGrupo, actualizarNombreGrupo, salirDeGrupo, cambiarRolMiembro, sacarMiembro, type DetalleGrupo, type IntegranteActivo } from '@/lib/grupo'
 import { mesEnMinusculas } from '@/lib/format'
 import { Avatar } from '@/components/app/Avatar'
 import { BottomNav } from '@/components/app/BottomNav'
@@ -48,28 +48,56 @@ function Tooltip({ children }: { children: React.ReactNode }) {
   )
 }
 
-function MenuInerte({ id, tooltipAbierto, onToggle }: { id: string; tooltipAbierto: string | null; onToggle: (id: string | null) => void }) {
-  const abierto = tooltipAbierto === id
+function BotonMenu({ onClick }: { onClick: () => void }) {
   return (
-    <div style={{ position: 'relative' }}>
-      <button
-        onClick={() => onToggle(abierto ? null : id)}
-        onMouseEnter={() => onToggle(id)}
-        onMouseLeave={() => onToggle(null)}
-        aria-label="Más opciones"
-        style={{
-          width: 30, height: 30, borderRadius: '50%', border: 'none', background: 'var(--color-icon-bg)',
-          display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', padding: 0, flexShrink: 0,
-        }}
-      >
-        <svg width="15" height="15" viewBox="0 0 20 20" fill="none">
-          <circle cx="10" cy="4.5" r="1.4" fill="var(--color-text-secondary)" />
-          <circle cx="10" cy="10" r="1.4" fill="var(--color-text-secondary)" />
-          <circle cx="10" cy="15.5" r="1.4" fill="var(--color-text-secondary)" />
-        </svg>
-      </button>
-      {abierto && <Tooltip>Próximamente</Tooltip>}
-    </div>
+    <button
+      onClick={onClick}
+      aria-label="Más opciones"
+      style={{
+        width: 30, height: 30, borderRadius: '50%', border: 'none', background: 'var(--color-icon-bg)',
+        display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', padding: 0, flexShrink: 0,
+      }}
+    >
+      <svg width="15" height="15" viewBox="0 0 20 20" fill="none">
+        <circle cx="10" cy="4.5" r="1.4" fill="var(--color-text-secondary)" />
+        <circle cx="10" cy="10" r="1.4" fill="var(--color-text-secondary)" />
+        <circle cx="10" cy="15.5" r="1.4" fill="var(--color-text-secondary)" />
+      </svg>
+    </button>
+  )
+}
+
+function FilaAccionSheet({ icono, label, negativo, disabled, onClick }: {
+  icono: React.ReactNode
+  label: string
+  negativo?: boolean
+  disabled?: boolean
+  onClick: () => void
+}) {
+  return (
+    <button
+      onClick={onClick}
+      disabled={disabled}
+      style={{
+        width: '100%', display: 'flex', alignItems: 'center', gap: 13, padding: '13px 4px',
+        background: 'none', border: 'none', textAlign: 'left', cursor: disabled ? 'default' : 'pointer',
+        opacity: disabled ? 0.6 : 1,
+      }}
+    >
+      <div style={{
+        width: 36, height: 36, borderRadius: '50%', flexShrink: 0,
+        background: negativo ? 'var(--color-negative-tint)' : 'var(--color-icon-bg)',
+        display: 'flex', alignItems: 'center', justifyContent: 'center',
+      }}>
+        {icono}
+      </div>
+      <span style={{
+        fontSize: 14.5, fontWeight: 600, fontFamily: F_BODY,
+        color: negativo ? 'var(--color-negative)' : 'var(--color-text-primary)',
+      }}>
+        {label}
+      </span>
+    </button>
   )
 }
 
@@ -145,6 +173,13 @@ function GrupoPageInner() {
   const [saliendo, setSaliendo] = useState(false)
   const [errorSalir, setErrorSalir] = useState<string | null>(null)
 
+  const [menuAbiertoId, setMenuAbiertoId] = useState<string | null>(null)
+  const [cambiandoRol, setCambiandoRol] = useState(false)
+  const [errorMenu, setErrorMenu] = useState<string | null>(null)
+  const [confirmandoSacar, setConfirmandoSacar] = useState<IntegranteActivo | null>(null)
+  const [sacando, setSacando] = useState(false)
+  const [errorSacar, setErrorSacar] = useState<string | null>(null)
+
   useEffect(() => {
     let activo = true
     async function cargar() {
@@ -180,10 +215,6 @@ function GrupoPageInner() {
     })
     return () => { activo = false }
   }, [fase, grupoId, usuarioId])
-
-  function handleToggleTooltip(id: string | null) {
-    setTooltipAbierto(id)
-  }
 
   async function handleGuardarNombre() {
     if (!grupoId || !detalle) return
@@ -243,6 +274,47 @@ function GrupoPageInner() {
       router.replace('/')
     } finally {
       setSaliendo(false)
+    }
+  }
+
+  async function recargarDetalle() {
+    if (!grupoId || !usuarioId) return
+    const d = await obtenerDetalleGrupo(grupoId, usuarioId)
+    setDetalle(d)
+  }
+
+  async function handleCambiarRol(integrante: IntegranteActivo) {
+    if (!grupoId) return
+    const nuevoRol = integrante.rol === 'admin' ? 'miembro' : 'admin'
+    setCambiandoRol(true)
+    setErrorMenu(null)
+    try {
+      const { error } = await cambiarRolMiembro(grupoId, integrante.id, nuevoRol)
+      if (error) { setErrorMenu(error); return }
+      setMenuAbiertoId(null)
+      await recargarDetalle()
+    } finally {
+      setCambiandoRol(false)
+    }
+  }
+
+  function handleAbrirConfirmarSacar(integrante: IntegranteActivo) {
+    setMenuAbiertoId(null)
+    setErrorSacar(null)
+    setConfirmandoSacar(integrante)
+  }
+
+  async function handleConfirmarSacar() {
+    if (!grupoId || !confirmandoSacar) return
+    setSacando(true)
+    setErrorSacar(null)
+    try {
+      const { error } = await sacarMiembro(grupoId, confirmandoSacar.id)
+      if (error) { setErrorSacar(error); return }
+      setConfirmandoSacar(null)
+      await recargarDetalle()
+    } finally {
+      setSacando(false)
     }
   }
 
@@ -524,16 +596,16 @@ function GrupoPageInner() {
                     {a.rol === 'admin' ? 'Admin' : 'Miembro'}
                   </div>
                 </div>
-                {a.rol === 'admin' ? (
+                {d.soyAdmin && a.id !== usuarioId ? (
+                  <BotonMenu onClick={() => { setErrorMenu(null); setMenuAbiertoId(a.id) }} />
+                ) : a.rol === 'admin' ? (
                   <span style={{
                     fontSize: 11.5, fontWeight: 700, color: 'var(--color-cta-dark)', background: 'var(--tint-cta)',
                     borderRadius: 100, padding: '5px 12px', flexShrink: 0, fontFamily: F_BODY,
                   }}>
                     Admin
                   </span>
-                ) : (
-                  <MenuInerte id={`menu-${a.id}`} tooltipAbierto={tooltipAbierto} onToggle={handleToggleTooltip} />
-                )}
+                ) : null}
               </div>
             ))}
           </div>
@@ -651,6 +723,129 @@ function GrupoPageInner() {
                   }}
                 >
                   Quedarme
+                </button>
+              </div>
+            </div>
+          </div>
+        </>
+      )}
+
+      {/* ─── Menú de acciones sobre un integrante activo ─── */}
+      {menuAbiertoId && (() => {
+        const integrante = d.activos.find(a => a.id === menuAbiertoId)
+        if (!integrante) return null
+        return (
+          <>
+            <div
+              onClick={() => !cambiandoRol && setMenuAbiertoId(null)}
+              style={{ position: 'fixed', inset: 0, zIndex: 60, background: 'rgba(26,26,30,0.45)' }}
+            />
+            <div style={{
+              position: 'fixed', bottom: 0, left: 0, right: 0, zIndex: 70,
+              background: 'var(--color-surface-white)', borderRadius: '24px 24px 0 0',
+              paddingBottom: 'max(24px, env(safe-area-inset-bottom))',
+            }}>
+              <div style={{ display: 'flex', justifyContent: 'center', padding: '12px 0 4px' }}>
+                <div style={{ width: 40, height: 4, borderRadius: 2, background: 'var(--color-border)' }} />
+              </div>
+              <div style={{ padding: '8px 20px 0' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '8px 4px 16px' }}>
+                  <Avatar nombre={integrante.nombre} color={integrante.avatar_color} size={36} />
+                  <span style={{ fontSize: 15, fontWeight: 700, color: 'var(--color-text-primary)', fontFamily: F_BODY }}>
+                    {integrante.nombre}
+                  </span>
+                </div>
+
+                <FilaAccionSheet
+                  disabled={cambiandoRol}
+                  onClick={() => handleCambiarRol(integrante)}
+                  icono={
+                    <svg width="16" height="16" viewBox="0 0 20 20" fill="none">
+                      <path d="M4 8l3-3 3 3M7 5v8M16 12l-3 3-3-3M13 15V7" stroke="var(--color-text-secondary)" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+                    </svg>
+                  }
+                  label={cambiandoRol ? 'Cambiando…' : (integrante.rol === 'admin' ? 'Cambiar a miembro' : 'Cambiar a admin')}
+                />
+                <FilaAccionSheet
+                  negativo
+                  disabled={cambiandoRol}
+                  onClick={() => handleAbrirConfirmarSacar(integrante)}
+                  icono={
+                    <svg width="16" height="16" viewBox="0 0 20 20" fill="none">
+                      <path d="M7.5 3H4a1 1 0 00-1 1v12a1 1 0 001 1h3.5M11 13l3-3-3-3M14 10H7" stroke="var(--color-negative)" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
+                    </svg>
+                  }
+                  label="Sacar del grupo"
+                />
+
+                {errorMenu && (
+                  <p style={{ margin: '4px 0 0', fontSize: 12.5, color: 'var(--color-negative)', fontFamily: F_BODY }}>{errorMenu}</p>
+                )}
+
+                <button
+                  onClick={() => setMenuAbiertoId(null)}
+                  disabled={cambiandoRol}
+                  style={{
+                    width: '100%', height: 50, borderRadius: 14, border: '1px solid var(--color-border)',
+                    background: 'var(--color-surface-white)', color: 'var(--color-text-primary)',
+                    fontSize: 14.5, fontWeight: 700, fontFamily: F_BODY, cursor: 'pointer', margin: '14px 0 18px',
+                  }}
+                >
+                  Cancelar
+                </button>
+              </div>
+            </div>
+          </>
+        )
+      })()}
+
+      {/* ─── Confirmación para sacar a un integrante ─── */}
+      {confirmandoSacar && (
+        <>
+          <div
+            onClick={() => !sacando && setConfirmandoSacar(null)}
+            style={{ position: 'fixed', inset: 0, zIndex: 60, background: 'rgba(26,26,30,0.45)' }}
+          />
+          <div style={{
+            position: 'fixed', bottom: 0, left: 0, right: 0, zIndex: 70,
+            background: 'var(--color-surface-white)', borderRadius: '24px 24px 0 0',
+            paddingBottom: 'max(24px, env(safe-area-inset-bottom))',
+          }}>
+            <div style={{ display: 'flex', justifyContent: 'center', padding: '12px 0 4px' }}>
+              <div style={{ width: 40, height: 4, borderRadius: 2, background: 'var(--color-border)' }} />
+            </div>
+            <div style={{ padding: '16px 24px 0', textAlign: 'center' }}>
+              <div style={{
+                width: 64, height: 64, borderRadius: '50%', background: 'var(--color-negative-tint)',
+                display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 16px',
+              }}>
+                <svg width="26" height="26" viewBox="0 0 20 20" fill="none">
+                  <path d="M7.5 3H4a1 1 0 00-1 1v12a1 1 0 001 1h3.5M11 13l3-3-3-3M14 10H7" stroke="var(--color-negative)" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
+                </svg>
+              </div>
+              <h2 style={{ margin: 0, fontFamily: F_HEAD, fontSize: 20, fontWeight: 800, letterSpacing: '-0.01em', color: 'var(--color-text-primary)' }}>
+                ¿Sacar a {confirmandoSacar.nombre} de {d.nombre}?
+              </h2>
+              <p style={{ margin: '10px 0 0', fontSize: 13.5, lineHeight: 1.5, color: 'var(--color-text-secondary)', fontFamily: F_BODY }}>
+                Su historial en el grupo queda intacto, marcado como que ya no pertenece — igual que cuando alguien sale por su cuenta.
+              </p>
+              {errorSacar && (
+                <p style={{ margin: '12px 0 0', fontSize: 13, color: 'var(--color-negative)', fontFamily: F_BODY }}>{errorSacar}</p>
+              )}
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 10, margin: '22px 0 0' }}>
+                <BotonPeligro onClick={handleConfirmarSacar} disabled={sacando}>
+                  {sacando ? 'Sacando…' : 'Sí, sacar del grupo'}
+                </BotonPeligro>
+                <button
+                  onClick={() => setConfirmandoSacar(null)}
+                  disabled={sacando}
+                  style={{
+                    height: 54, width: '100%', borderRadius: 15, border: '1px solid var(--color-border)',
+                    background: 'var(--color-surface-white)', color: 'var(--color-text-primary)',
+                    fontSize: 15, fontWeight: 700, fontFamily: F_BODY, cursor: 'pointer',
+                  }}
+                >
+                  Cancelar
                 </button>
               </div>
             </div>

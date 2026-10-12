@@ -41,6 +41,7 @@ export default function PerfilPage() {
 
   const [cargando, setCargando] = useState(true)
   const [nombre, setNombre] = useState('')
+  const [email, setEmail] = useState('')
   const [avatarColor, setAvatarColor] = useState('#A8D8B9')
   const [grupos, setGrupos] = useState<GrupoNombre[]>([])
 
@@ -62,6 +63,7 @@ export default function PerfilPage() {
       ])
       if (!activo) return
       setNombre(usuario?.nombre ?? '')
+      setEmail(user.email ?? '')
       setAvatarColor(usuario?.avatar_color ?? '#A8D8B9')
       setGrupos(listaGrupos)
       setCargando(false)
@@ -114,74 +116,96 @@ export default function PerfilPage() {
           </div>
         </div>
 
-        <div style={{ textAlign: 'center', padding: '20px 0 26px' }}>
-          <div style={{ display: 'flex', justifyContent: 'center', marginBottom: 14 }}>
-            <Avatar nombre={nombre || '?'} color={avatarColor} size={92} />
+        {/* ─── Card de identidad ─── */}
+        <div style={{
+          display: 'flex', alignItems: 'center', gap: 14, marginTop: 14,
+          background: 'var(--color-surface-white)', border: '1px solid var(--color-border)', borderRadius: 18, padding: 16,
+        }}>
+          <Avatar nombre={nombre || '?'} color={avatarColor} size={52} />
+          <div style={{ minWidth: 0 }}>
+            <div style={{ fontSize: 16, fontWeight: 700, color: 'var(--color-text-primary)', fontFamily: F_BODY }}>
+              {nombre}
+            </div>
+            <div style={{
+              fontSize: 13, color: 'var(--color-text-secondary)', marginTop: 2, fontFamily: F_BODY,
+              overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+            }}>
+              {email}
+            </div>
           </div>
-          <div style={{ fontFamily: F_HEAD, fontSize: 22, fontWeight: 800, letterSpacing: '-0.02em', color: 'var(--color-text-primary)' }}>
-            {nombre}
-          </div>
-          <p style={{ margin: '4px 0 0', fontSize: 13.5, color: 'var(--color-text-secondary)', fontFamily: F_BODY }}>
-            En {grupos.length} grupo{grupos.length === 1 ? '' : 's'}
-          </p>
         </div>
 
-        <div style={{ background: 'var(--color-surface-white)', border: '1px solid var(--color-border)', borderRadius: 18, padding: 18 }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+        {/* ─── Sección Cuenta ─── */}
+        <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: '0.06em', textTransform: 'uppercase', color: 'var(--color-text-muted)', margin: '22px 2px 10px' }}>
+          Cuenta
+        </div>
+        <div style={{ background: 'var(--color-surface-white)', border: '1px solid var(--color-border)', borderRadius: 18, padding: '4px 16px' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 13, padding: '13px 0' }}>
             <div style={{
-              width: 40, height: 40, borderRadius: '50%', background: 'var(--color-negative-tint)',
+              width: 36, height: 36, borderRadius: 11, background: 'var(--tint-cta)',
               display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0,
             }}>
-              <svg width="18" height="18" viewBox="0 0 20 20" fill="none">
-                <path d="M15.5 6.5A6 6 0 105.6 12M15.5 6.5V3M15.5 6.5H12" stroke="var(--color-negative)" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
-              </svg>
+              <span style={{ fontSize: 15, fontWeight: 700, color: 'var(--color-cta-dark)', fontFamily: F_BODY }}>$</span>
             </div>
-            <div style={{ fontSize: 15.5, fontWeight: 700, color: 'var(--color-negative)', fontFamily: F_BODY }}>
-              Reiniciar mi cuenta
-            </div>
+            <span style={{ flex: 1, fontSize: 14.5, fontWeight: 600, color: 'var(--color-text-primary)', fontFamily: F_BODY }}>
+              Moneda de visualización
+            </span>
+            <span style={{ fontSize: 14, fontWeight: 700, color: 'var(--color-text-secondary)', fontFamily: F_BODY }}>
+              CLP
+            </span>
           </div>
-          <p style={{ margin: '12px 0 0', fontSize: 13, lineHeight: 1.55, color: 'var(--color-text-secondary)', fontFamily: F_BODY }}>
-            Salís de todos los grupos a los que pertenecés, de una sola vez. Tu historial en cada uno queda intacto: los gastos y pagos siguen ahí, con tu nombre marcado como que ya no pertenecés. Podés volver a entrar a cualquiera con su código.
-          </p>
+        </div>
+
+        {/* ─── Sección sensible — sin título, separada por aire ─── */}
+        <div style={{ background: 'var(--color-surface-white)', border: '1px solid var(--color-border)', borderRadius: 18, padding: '4px 16px', marginTop: 28 }}>
           <button
             onClick={abrirModal}
             disabled={grupos.length === 0}
             style={{
-              marginTop: 16, width: '100%', height: 50, borderRadius: 14, border: 'none',
-              background: 'var(--color-negative-tint)', color: 'var(--color-negative)',
-              fontSize: 14.5, fontWeight: 700, fontFamily: F_BODY,
+              display: 'flex', alignItems: 'center', gap: 13, padding: '13px 0', width: '100%',
+              background: 'none', border: 'none', textAlign: 'left', borderBottom: '1px solid var(--color-divider)',
               cursor: grupos.length === 0 ? 'default' : 'pointer', opacity: grupos.length === 0 ? 0.5 : 1,
             }}
           >
-            Reiniciar mi cuenta
+            <div style={{
+              width: 36, height: 36, borderRadius: 11, background: 'var(--color-negative-tint)',
+              display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0,
+            }}>
+              <svg width="16" height="16" viewBox="0 0 20 20" fill="none">
+                <path d="M4 6h12M8 6V4.5A1.5 1.5 0 019.5 3h1A1.5 1.5 0 0112 4.5V6m2 0v10a1 1 0 01-1 1H7a1 1 0 01-1-1V6" stroke="var(--color-negative)" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+              </svg>
+            </div>
+            <span style={{ flex: 1, fontSize: 14.5, fontWeight: 600, color: 'var(--color-negative)', fontFamily: F_BODY }}>
+              Reiniciar mi cuenta
+            </span>
+            <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M6 4l4 4-4 4" stroke="var(--color-text-disabled)" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" /></svg>
+          </button>
+
+          <button
+            onClick={handleCerrarSesion}
+            disabled={cerrandoSesion}
+            style={{
+              display: 'flex', alignItems: 'center', gap: 13, padding: '13px 0', width: '100%',
+              background: 'none', border: 'none', textAlign: 'left',
+              cursor: 'pointer', opacity: cerrandoSesion ? 0.6 : 1,
+            }}
+          >
+            <div style={{
+              width: 36, height: 36, borderRadius: 11, background: 'var(--color-icon-bg)',
+              display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0,
+            }}>
+              <svg width="16" height="16" viewBox="0 0 18 18" fill="none">
+                <path d="M7 3H4a1 1 0 00-1 1v10a1 1 0 001 1h3M11 12l3-3-3-3M14 9H7" stroke="var(--color-text-secondary)" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
+              </svg>
+            </div>
+            <span style={{ flex: 1, fontSize: 14.5, fontWeight: 600, color: 'var(--color-text-primary)', fontFamily: F_BODY }}>
+              {cerrandoSesion ? 'Cerrando sesión…' : 'Cerrar sesión'}
+            </span>
           </button>
         </div>
 
-        <button
-          onClick={handleCerrarSesion}
-          disabled={cerrandoSesion}
-          style={{
-            marginTop: 14, width: '100%', display: 'flex', alignItems: 'center', gap: 12,
-            background: 'var(--color-surface-white)', border: '1px solid var(--color-border)', borderRadius: 16,
-            padding: '14px 16px', cursor: 'pointer', opacity: cerrandoSesion ? 0.6 : 1,
-          }}
-        >
-          <div style={{
-            width: 36, height: 36, borderRadius: '50%', background: 'var(--color-icon-bg)',
-            display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0,
-          }}>
-            <svg width="16" height="16" viewBox="0 0 18 18" fill="none">
-              <path d="M7 3H4a1 1 0 00-1 1v10a1 1 0 001 1h3M11 12l3-3-3-3M14 9H7" stroke="var(--color-text-secondary)" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
-            </svg>
-          </div>
-          <span style={{ flex: 1, textAlign: 'left', fontSize: 14.5, fontWeight: 600, color: 'var(--color-text-primary)', fontFamily: F_BODY }}>
-            {cerrandoSesion ? 'Cerrando sesión…' : 'Cerrar sesión'}
-          </span>
-          <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M6 4l4 4-4 4" stroke="var(--color-text-disabled)" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" /></svg>
-        </button>
-
         <p style={{ textAlign: 'center', marginTop: 32, fontSize: 12, color: 'var(--color-text-disabled)', fontFamily: F_BODY }}>
-          Better than Split · v2.0
+          v1.0.0
         </p>
       </div>
 

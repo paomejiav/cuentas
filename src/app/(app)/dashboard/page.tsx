@@ -1,452 +1,273 @@
 'use client'
 
-import { useEffect, useState, useCallback, useRef } from 'react'
-import { useRouter } from 'next/navigation'
+import { Suspense, useEffect, useState } from 'react'
+import { useRouter, useSearchParams } from 'next/navigation'
 import Link from 'next/link'
-import { useSession } from '@/lib/session-store'
-import { calcularSaldos, type SaldoPar } from '@/lib/saldos'
+import { supabase } from '@/lib/supabase'
+import { resolverGrupoActivo, type GrupoOpcion } from '@/lib/grupo-activo'
+import { calcularSaldosGrupo, obtenerResumenGastosGrupo, type SaldoIntegrante, type ResumenGastosGrupo } from '@/lib/cuentas'
 import { formatCLP, formatearTiempoRelativo } from '@/lib/format'
 import { Avatar } from '@/components/app/Avatar'
 import { BottomNav } from '@/components/app/BottomNav'
-import { Toast } from '@/components/app/Toast'
-import { supabase } from '@/lib/supabase'
 
-// ── Barra rayada (firma visual del rediseño) ──────────────────
-function BarraRayada({ pct, color, colorClaro }: { pct: number; color: string; colorClaro: string }) {
-  return (
-    <div style={{ height: 11, borderRadius: 7, background: 'var(--color-track)', overflow: 'hidden' }}>
-      <div
-        className="bar-stripe"
-        style={{
-          width: `${pct}%`, height: '100%', borderRadius: 7,
-          background: `repeating-linear-gradient(-45deg, ${color}, ${color} 5px, ${colorClaro} 5px, ${colorClaro} 10px)`,
-        }}
-      />
-    </div>
-  )
-}
+const F_HEAD = 'var(--font-sora), sans-serif'
+const F_BODY = 'var(--font-dm-sans), sans-serif'
 
-// ── Skeleton fila ─────────────────────────────────────────────
-function SkeletonRow() {
-  return (
-    <div aria-hidden="true" style={{ display: 'flex', alignItems: 'center', gap: 13, padding: '13px 0' }}>
-      <div className="skeleton" style={{ width: 42, height: 42, borderRadius: '50%', flexShrink: 0 }} />
-      <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 6 }}>
-        <div className="skeleton" style={{ height: 14, width: '38%', borderRadius: 6 }} />
-        <div className="skeleton" style={{ height: 11, width: '30%', borderRadius: 6 }} />
-      </div>
-      <div className="skeleton" style={{ height: 22, width: 76, borderRadius: 100 }} />
-    </div>
-  )
-}
-
-// ── Estado vacío (cero gastos en el grupo) ───────────────────
-function EstadoVacio() {
-  return (
-    <div style={{
-      background: 'var(--color-card)', border: '1px solid var(--color-border)', borderRadius: 18,
-      textAlign: 'center', padding: '40px 24px',
-    }}>
-      <div style={{ fontSize: 44, marginBottom: 10 }}>🧾</div>
-      <p style={{
-        margin: 0, fontSize: 17, fontWeight: 700,
-        color: 'var(--color-text-primary)',
-        fontFamily: 'var(--font-sora), sans-serif',
-      }}>
-        Todavía no hay gastos
-      </p>
-      <p style={{
-        margin: '8px 0 22px', fontSize: 13.5,
-        color: 'var(--color-text-secondary)',
-        fontFamily: 'var(--font-dm-sans), sans-serif',
-        lineHeight: 1.5,
-      }}>
-        Agrega el primer gasto del grupo y los saldos aparecerán aquí automáticamente.
-      </p>
-      <Link
-        href="/gastos/nuevo"
-        style={{
-          display: 'inline-flex', alignItems: 'center', gap: 8,
-          height: 48, padding: '0 24px', borderRadius: 100,
-          background: 'var(--gradient-cta)', color: 'white',
-          textDecoration: 'none',
-          fontSize: 14.5, fontWeight: 700,
-          fontFamily: 'var(--font-dm-sans), sans-serif',
-          boxShadow: 'var(--shadow-cta)',
-        }}
-      >
-        <svg width="16" height="16" viewBox="0 0 18 18" fill="none" aria-hidden="true">
-          <path d="M9 4v10M4 9h10" stroke="white" strokeWidth="1.8" strokeLinecap="round" />
-        </svg>
-        Agregar primer gasto
-      </Link>
-    </div>
-  )
-}
-
-// ── Fila de saldo por persona ────────────────────────────────
-function FilaSaldo({
-  par, esUltima, onClick,
-}: {
-  par: SaldoPar; esUltima: boolean; onClick: () => void
-}) {
-  const { neto, integrante } = par
-
-  const pill =
-    neto > 0
-      ? { label: 'Te debe', color: 'var(--color-positive)', tint: 'var(--color-positive-tint)', border: 'var(--color-positive-border)' }
-      : neto < 0
-      ? { label: 'Le debes', color: 'var(--color-negative)', tint: 'var(--color-negative-tint)', border: 'var(--color-negative-border)' }
-      : { label: 'Al día', color: 'var(--color-neutral)', tint: 'var(--color-neutral-tint)', border: 'var(--color-neutral-border)' }
-
-  return (
-    <button
-      onClick={onClick}
-      className="row-lift"
-      aria-label={`${integrante.nombre}: ${pill.label} ${formatCLP(Math.abs(neto))}`}
-      style={{
-        display: 'flex', alignItems: 'center', gap: 13, width: '100%',
-        padding: '13px 0', border: 'none', background: 'transparent',
-        cursor: 'pointer', textAlign: 'left',
-        borderBottom: esUltima ? 'none' : '1px solid var(--color-divider)',
-        WebkitTapHighlightColor: 'transparent',
-      }}
-    >
-      <Avatar nombre={integrante.nombre} color={integrante.avatar_color} size={42} />
-
-      <div style={{ flex: 1, minWidth: 0 }}>
-        <p style={{
-          margin: 0, fontSize: 14.5, fontWeight: 700,
-          color: 'var(--color-text-primary)',
-          fontFamily: 'var(--font-dm-sans), sans-serif',
-          whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
-        }}>
-          {integrante.nombre}
-        </p>
-        <p style={{
-          margin: '1px 0 0', fontSize: 11.5,
-          color: 'var(--color-text-muted)',
-          fontFamily: 'var(--font-dm-sans), sans-serif',
-        }}>
-          {formatCLP(Math.abs(neto))}
-        </p>
-      </div>
-
-      <div style={{
-        display: 'inline-flex', alignItems: 'center', gap: 5, flexShrink: 0,
-        border: `1px solid ${pill.border}`, background: pill.tint,
-        borderRadius: 100, padding: '4px 10px',
-      }}>
-        <span style={{ width: 6, height: 6, borderRadius: '50%', background: pill.color, flexShrink: 0 }} />
-        <span style={{ fontSize: 11.5, fontWeight: 600, color: pill.color, fontFamily: 'var(--font-dm-sans), sans-serif' }}>
-          {pill.label}
-        </span>
-      </div>
-    </button>
-  )
-}
-
-// ── Página principal ─────────────────────────────────────────
 export default function DashboardPage() {
+  return (
+    <Suspense>
+      <DashboardPageInner />
+    </Suspense>
+  )
+}
+
+function DashboardPageInner() {
   const router = useRouter()
-  const { sesion, loading: sesionLoading, cerrarSesion } = useSession()
-  const [saldos, setSaldos] = useState<SaldoPar[]>([])
-  const [cargando, setCargando] = useState(true)
-  const [tieneGastos, setTieneGastos] = useState(true)
-  const [ultimaActividad, setUltimaActividad] = useState<string | null>(null)
-  const [toast, setToast] = useState<{ mensaje: string; tipo: 'exito' | 'error' } | null>(null)
-  const channelRef = useRef<ReturnType<typeof supabase.channel> | null>(null)
+  const params = useSearchParams()
 
-  const cargarSaldos = useCallback(async () => {
-    if (!sesion) return
-    setCargando(true)
-    try {
-      const resultado = await calcularSaldos(sesion.grupo_id, sesion.integrante_id)
-      setSaldos(resultado)
+  const [fase, setFase] = useState<'cargando' | 'elegir-grupo' | 'ok'>('cargando')
+  const [grupos, setGrupos] = useState<GrupoOpcion[]>([])
+  const [grupoId, setGrupoId] = useState<string | null>(null)
+  const [usuarioId, setUsuarioId] = useState<string | null>(null)
+  const [nombreUsuario, setNombreUsuario] = useState('')
+  const [avatarColor, setAvatarColor] = useState('#A8D8B9')
+  const [grupoNombre, setGrupoNombre] = useState('')
+  const [cargandoDashboard, setCargandoDashboard] = useState(true)
+  const [resumenGrupo, setResumenGrupo] = useState<ResumenGastosGrupo>({ saldoTotal: 0, ultimaActividad: null })
+  const [saldosPersonas, setSaldosPersonas] = useState<SaldoIntegrante[]>([])
 
-      // Verificar si hay algún gasto (para el estado vacío)
-      const { count } = await supabase
-        .from('gastos')
-        .select('id', { count: 'exact', head: true })
-        .eq('grupo_id', sesion.grupo_id)
-        .is('mes_cierre', null)
-      setTieneGastos((count ?? 0) > 0)
+  useEffect(() => {
+    let activo = true
+    async function cargar() {
+      const { data: { user } } = await supabase.auth.getUser()
+      if (!user) { router.replace('/login'); return }
 
-      // Gasto activo más reciente, para "Última actividad"
-      const { data: ultimo } = await supabase
-        .from('gastos')
-        .select('creado_en')
-        .eq('grupo_id', sesion.grupo_id)
-        .is('mes_cierre', null)
-        .order('creado_en', { ascending: false })
-        .limit(1)
-        .maybeSingle()
-      setUltimaActividad(ultimo?.creado_en ?? null)
-    } catch {
-      setToast({ mensaje: 'Sin conexión. Intenta de nuevo.', tipo: 'error' })
-    } finally {
-      setCargando(false)
+      const [{ data: usuario }, resolucion] = await Promise.all([
+        supabase.from('usuarios').select('nombre, avatar_color').eq('id', user.id).single(),
+        resolverGrupoActivo(user.id, params.get('grupo')),
+      ])
+      if (!activo) return
+      setUsuarioId(user.id)
+      setNombreUsuario(usuario?.nombre ?? '')
+      setAvatarColor(usuario?.avatar_color ?? '#A8D8B9')
+
+      if (resolucion.estado === 'sin-grupos') { router.replace('/'); return }
+      if (resolucion.estado === 'elegir') {
+        setGrupos(resolucion.grupos)
+        setFase('elegir-grupo')
+        return
+      }
+
+      setGrupoId(resolucion.grupoId)
+      setFase('ok')
     }
-  }, [sesion])
-
-  // Suscripción Realtime — escucha inserciones en gastos del grupo
-  useEffect(() => {
-    if (!sesion) return
-
-    const channel = supabase
-      .channel(`gastos-grupo-${sesion.grupo_id}`)
-      .on(
-        'postgres_changes',
-        {
-          event: 'INSERT',
-          schema: 'public',
-          table: 'gastos',
-          filter: `grupo_id=eq.${sesion.grupo_id}`,
-        },
-        payload => {
-          const nuevoGasto = payload.new as { creado_por: string; descripcion: string }
-          // Si no fui yo quien lo creó, mostrar notificación
-          if (nuevoGasto.creado_por !== sesion.integrante_id) {
-            supabase
-              .from('integrantes')
-              .select('nombre')
-              .eq('id', nuevoGasto.creado_por)
-              .single()
-              .then(({ data }) => {
-                const quien = data?.nombre ?? 'Alguien'
-                setToast({
-                  mensaje: `${quien} agregó "${nuevoGasto.descripcion}"`,
-                  tipo: 'exito',
-                })
-              })
-          }
-          cargarSaldos()
-        }
-      )
-      .on(
-        'postgres_changes',
-        { event: 'DELETE', schema: 'public', table: 'gastos', filter: `grupo_id=eq.${sesion.grupo_id}` },
-        () => cargarSaldos()
-      )
-      .subscribe()
-
-    channelRef.current = channel
-    return () => { supabase.removeChannel(channel) }
-  }, [sesion, cargarSaldos])
+    cargar()
+    return () => { activo = false }
+  }, [router, params])
 
   useEffect(() => {
-    if (!sesionLoading && !sesion) { router.replace('/login'); return }
-    if (sesion) cargarSaldos()
-  }, [sesion, sesionLoading, router, cargarSaldos])
+    if (fase !== 'ok' || !grupoId || !usuarioId) return
+    let activo = true
+    async function cargarDashboard() {
+      setCargandoDashboard(true)
+      const [{ data: grupo }, resumen, saldos] = await Promise.all([
+        supabase.from('grupos').select('nombre').eq('id', grupoId!).single(),
+        obtenerResumenGastosGrupo(grupoId!),
+        calcularSaldosGrupo(grupoId!, usuarioId!),
+      ])
+      if (!activo) return
+      setGrupoNombre(grupo?.nombre ?? '')
+      setResumenGrupo(resumen)
+      setSaldosPersonas(saldos)
+      setCargandoDashboard(false)
+    }
+    cargarDashboard()
+    return () => { activo = false }
+  }, [fase, grupoId, usuarioId])
 
-  function handleCerrarSesion() {
-    if (channelRef.current) supabase.removeChannel(channelRef.current)
-    cerrarSesion()
-    router.replace('/login')
+  if (fase === 'cargando') {
+    return (
+      <main style={{ minHeight: '100dvh', background: 'var(--color-bg)' }}>
+        <p style={{ padding: 24, fontSize: 13.5, color: 'var(--color-text-secondary)', fontFamily: F_BODY }}>Cargando…</p>
+      </main>
+    )
   }
 
-  if (sesionLoading || !sesion) return null
-
-  const totalTeDeben = saldos.filter(s => s.neto > 0).reduce((acc, s) => acc + s.neto, 0)
-  const totalDebes = saldos.filter(s => s.neto < 0).reduce((acc, s) => acc + Math.abs(s.neto), 0)
-  const saldoNeto = totalTeDeben - totalDebes
-  const maxBarra = Math.max(totalTeDeben, totalDebes, 1)
-  const pctTeDeben = totalTeDeben > 0 ? Math.max(4, (totalTeDeben / maxBarra) * 100) : 0
-  const pctDebes = totalDebes > 0 ? Math.max(4, (totalDebes / maxBarra) * 100) : 0
-  const todoAlDia = tieneGastos && totalTeDeben === 0 && totalDebes === 0
+  if (fase === 'elegir-grupo') {
+    return (
+      <main style={{ minHeight: '100dvh', background: 'var(--color-bg)' }}>
+        <div style={{ maxWidth: 440, margin: '0 auto', padding: '0 18px', paddingTop: 'max(24px, env(safe-area-inset-top, 0px))' }}>
+          <h1 style={{ margin: 0, fontFamily: F_HEAD, fontSize: 22, fontWeight: 800, letterSpacing: '-0.02em', color: 'var(--color-text-primary)' }}>
+            ¿Qué grupo querés ver?
+          </h1>
+          <p style={{ margin: '6px 0 20px', fontSize: 13.5, color: 'var(--color-text-secondary)', fontFamily: F_BODY }}>
+            Pertenecés a más de un grupo.
+          </p>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+            {grupos.map(g => (
+              <Link
+                key={g.id}
+                href={`/dashboard?grupo=${g.id}`}
+                style={{
+                  display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                  background: 'var(--color-surface-white)', border: '1px solid var(--color-border)',
+                  borderRadius: 16, padding: '16px 18px', textDecoration: 'none',
+                }}
+              >
+                <span style={{ fontSize: 15, fontWeight: 700, color: 'var(--color-text-primary)', fontFamily: F_BODY }}>{g.nombre}</span>
+                <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M6 4l4 4-4 4" stroke="var(--color-cta)" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" /></svg>
+              </Link>
+            ))}
+          </div>
+        </div>
+      </main>
+    )
+  }
 
   return (
-    <div style={{ minHeight: '100vh', background: 'var(--color-bg)', paddingBottom: 96 }}>
-      <div style={{ maxWidth: 640, margin: '0 auto' }}>
+    <main style={{ minHeight: '100dvh', background: 'var(--color-bg)', paddingBottom: 96 }}>
+      <div style={{ maxWidth: 440, margin: '0 auto', padding: '0 18px', paddingTop: 'max(20px, env(safe-area-inset-top, 0px))' }}>
 
-      {/* ── HEADER ── */}
-      <header style={{
-        paddingTop: 'max(56px, calc(env(safe-area-inset-top, 0px) + 16px))',
-        paddingBottom: 18,
-        paddingLeft: 'var(--page-px)',
-        paddingRight: 'var(--page-px)',
-        display: 'flex', alignItems: 'center',
-        justifyContent: 'space-between', gap: 12,
-      }}>
-        <div style={{ minWidth: 0 }}>
-          <p style={{
-            margin: 0, fontSize: 12.5,
-            color: 'var(--color-neutral)',
-            fontFamily: 'var(--font-dm-sans), sans-serif',
-          }}>
-            Hola, {sesion.nombre.split(' ')[0]} 👋
-          </p>
-          <h1 style={{
-            margin: '2px 0 0', fontSize: 24, fontWeight: 800,
-            color: 'var(--color-text-primary)',
-            fontFamily: 'var(--font-sora), sans-serif',
-            letterSpacing: '-0.02em',
-            whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
-          }}>
-            Tus cuentas
-          </h1>
-        </div>
-
-        <div style={{ display: 'flex', alignItems: 'center', gap: 9, flexShrink: 0 }}>
-          {/* Campana — decorativa hasta que exista la pantalla de novedades */}
-          <div
-            aria-hidden="true"
-            style={{
-              width: 42, height: 42, borderRadius: '50%',
-              background: 'var(--color-surface-white)', border: '1px solid var(--color-border)',
-              display: 'flex', alignItems: 'center', justifyContent: 'center',
-            }}
-          >
-            <svg width="18" height="18" viewBox="0 0 20 20" fill="none">
-              <path d="M10 3a4 4 0 00-4 4c0 3-1.2 4.3-1.8 4.9-.3.3-.1.8.3.8h11c.4 0 .6-.5.3-.8C15.2 11.3 14 10 14 7a4 4 0 00-4-4zM8.5 15.5a1.5 1.5 0 003 0" stroke="var(--color-text-secondary)" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" />
-            </svg>
-          </div>
-
-          <button
-            onClick={handleCerrarSesion}
-            aria-label="Cerrar sesión"
-            style={{
-              width: 42, height: 42, borderRadius: '50%', padding: 0,
-              background: 'var(--color-surface-white)', border: '1px solid var(--color-border)',
-              display: 'flex', alignItems: 'center', justifyContent: 'center',
-              cursor: 'pointer', flexShrink: 0,
-            }}
-          >
-            <svg width="16" height="16" viewBox="0 0 18 18" fill="none" aria-hidden="true">
-              <path d="M7 3H4a1 1 0 00-1 1v10a1 1 0 001 1h3M11 12l3-3-3-3M14 9H7"
-                stroke="var(--color-text-secondary)"
-                strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
-            </svg>
-          </button>
-
-          <Avatar
-            nombre={sesion.nombre}
-            color={sesion.avatar_color}
-            size={42}
-            aria-label={`Avatar de ${sesion.nombre}`}
-          />
-        </div>
-      </header>
-
-      {/* ── CONTENIDO ── */}
-      <main style={{ padding: '0 var(--page-px)' }}>
-
-        {cargando && (
-          <div style={{ background: 'var(--color-card)', border: '1px solid var(--color-border)', borderRadius: 18, padding: '18px 18px 20px' }}>
-            <div className="skeleton" style={{ height: 12, width: 140, borderRadius: 6, marginBottom: 10 }} />
-            <div className="skeleton" style={{ height: 32, width: 170, borderRadius: 8, marginBottom: 18 }} />
-            <div className="skeleton" style={{ height: 58, borderRadius: 12, marginBottom: 10 }} />
-            <div className="skeleton" style={{ height: 58, borderRadius: 12 }} />
-          </div>
-        )}
-
-        {!cargando && tieneGastos && !todoAlDia && (
-          <div style={{ background: 'var(--color-card)', border: '1px solid var(--color-border)', borderRadius: 18, padding: '18px 18px 20px' }}>
-            <p style={{ margin: 0, fontSize: 12.5, color: 'var(--color-neutral)', fontFamily: 'var(--font-dm-sans), sans-serif' }}>
-              Saldo total del grupo
-            </p>
-            <div style={{ display: 'flex', alignItems: 'baseline', gap: 6, marginTop: 5 }}>
-              <span style={{
-                fontFamily: 'var(--font-sora), sans-serif', fontSize: 32, fontWeight: 800,
-                color: 'var(--color-text-primary)', letterSpacing: '-0.02em',
-              }}>
-                {formatCLP(Math.abs(saldoNeto))}
-              </span>
-              <span style={{ fontSize: 14, fontWeight: 600, color: 'var(--color-text-muted)' }}>CLP</span>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 18 }}>
+          <div>
+            <div style={{ fontSize: 12.5, color: 'var(--color-neutral)', fontFamily: F_BODY }}>
+              Hola, {nombreUsuario} 👋
             </div>
-            {ultimaActividad && (
-              <p style={{ margin: '4px 0 0', fontSize: 11.5, color: 'var(--color-text-muted)', fontFamily: 'var(--font-dm-sans), sans-serif' }}>
-                Última act. {formatearTiempoRelativo(ultimaActividad)}
-              </p>
-            )}
-
-            {totalTeDeben > 0 && (
-              <div style={{ marginTop: 16, border: '1px solid var(--color-divider)', borderRadius: 12, padding: '12px 13px' }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline' }}>
-                  <span style={{ fontSize: 12, color: 'var(--color-text-secondary)', fontFamily: 'var(--font-dm-sans), sans-serif' }}>Te deben</span>
-                  <span style={{ fontSize: 14, fontWeight: 700, color: 'var(--color-text-primary)', fontFamily: 'var(--font-sora), sans-serif' }}>
-                    {formatCLP(totalTeDeben)}
-                  </span>
-                </div>
-                <div style={{ marginTop: 8 }}>
-                  <BarraRayada pct={pctTeDeben} color="#47C6F4" colorClaro="#6FD3F7" />
-                </div>
-              </div>
-            )}
-
-            {totalDebes > 0 && (
-              <div style={{ marginTop: totalTeDeben > 0 ? 10 : 16, border: '1px solid var(--color-divider)', borderRadius: 12, padding: '12px 13px' }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline' }}>
-                  <span style={{ fontSize: 12, color: 'var(--color-text-secondary)', fontFamily: 'var(--font-dm-sans), sans-serif' }}>Debes</span>
-                  <span style={{ fontSize: 14, fontWeight: 700, color: 'var(--color-text-primary)', fontFamily: 'var(--font-sora), sans-serif' }}>
-                    {formatCLP(totalDebes)}
-                  </span>
-                </div>
-                <div style={{ marginTop: 8 }}>
-                  <BarraRayada pct={pctDebes} color="#F2B33D" colorClaro="#F6C463" />
-                </div>
-              </div>
-            )}
+            <div style={{ fontFamily: F_HEAD, fontSize: 24, fontWeight: 800, color: 'var(--color-text-primary)', letterSpacing: '-0.02em', marginTop: 2 }}>
+              {grupoNombre || 'Tus cuentas'}
+            </div>
           </div>
-        )}
-
-        {!cargando && todoAlDia && (
-          <div style={{ background: 'var(--color-card)', border: '1px solid var(--color-border)', borderRadius: 18, padding: 22, textAlign: 'center' }}>
-            <div style={{ fontSize: 30, marginBottom: 6 }}>🎉</div>
-            <p style={{ margin: 0, fontSize: 15, fontWeight: 700, color: 'var(--color-text-primary)', fontFamily: 'var(--font-dm-sans), sans-serif' }}>
-              ¡Todo al día!
-            </p>
-            <p style={{ margin: '4px 0 0', fontSize: 13, color: 'var(--color-text-secondary)', fontFamily: 'var(--font-dm-sans), sans-serif' }}>
-              Sin deudas pendientes entre el grupo
-            </p>
+          <div style={{ display: 'flex', gap: 9, alignItems: 'center' }}>
+            <div
+              aria-hidden="true"
+              title="Novedades (todavía sin conectar)"
+              style={{
+                width: 42, height: 42, borderRadius: '50%', background: 'var(--color-surface-white)',
+                border: '1px solid var(--color-border)', display: 'flex', alignItems: 'center', justifyContent: 'center',
+              }}
+            >
+              <svg width="18" height="18" viewBox="0 0 20 20" fill="none">
+                <path d="M10 3a4 4 0 00-4 4c0 3-1.2 4.3-1.8 4.9-.3.3-.1.8.3.8h11c.4 0 .6-.5.3-.8C15.2 11.3 14 10 14 7a4 4 0 00-4-4zM8.5 15.5a1.5 1.5 0 003 0" stroke="var(--color-text-secondary)" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" />
+              </svg>
+            </div>
+            <Link
+              href={`/grupo${grupoId ? `?grupo=${grupoId}` : ''}`}
+              aria-label="Grupo"
+              style={{
+                width: 42, height: 42, borderRadius: '50%', background: 'var(--color-surface-white)',
+                border: '1px solid var(--color-border)', display: 'flex', alignItems: 'center', justifyContent: 'center',
+                flexShrink: 0,
+              }}
+            >
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none">
+                <circle cx="12" cy="12" r="3" stroke="var(--color-text-secondary)" strokeWidth="1.5" />
+                <path
+                  d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 11-2.83 2.83l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 11-2.83-2.83l.06-.06a1.65 1.65 0 00.33-1.82 1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 112.83-2.83l.06.06a1.65 1.65 0 001.82.33H9a1.65 1.65 0 001-1.51V3a2 2 0 014 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 112.83 2.83l-.06.06a1.65 1.65 0 00-.33 1.82V9a1.65 1.65 0 001.51 1H21a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1z"
+                  stroke="var(--color-text-secondary)" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"
+                />
+              </svg>
+            </Link>
+            <Link href="/perfil" aria-label="Perfil" style={{ display: 'flex', flexShrink: 0 }}>
+              <Avatar nombre={nombreUsuario || '?'} color={avatarColor} size={42} />
+            </Link>
           </div>
-        )}
+        </div>
 
-        {!cargando && !tieneGastos && <EstadoVacio />}
-
-        {tieneGastos && (
+        {cargandoDashboard ? (
+          <p style={{ fontSize: 13.5, color: 'var(--color-text-secondary)', fontFamily: F_BODY }}>Cargando…</p>
+        ) : (
           <>
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', margin: '22px 2px 12px' }}>
-              <span style={{
-                fontFamily: 'var(--font-sora), sans-serif', fontSize: 16, fontWeight: 700,
-                letterSpacing: '-0.01em', color: 'var(--color-text-primary)',
-              }}>
+            {(() => {
+              const teDeben = saldosPersonas.filter(s => s.neto > 0).reduce((s, p) => s + p.neto, 0)
+              const debes = saldosPersonas.filter(s => s.neto < 0).reduce((s, p) => s + Math.abs(p.neto), 0)
+              return (
+                <div style={{ background: 'var(--color-surface-white)', border: '1px solid var(--color-border)', borderRadius: 18, padding: '18px 18px 20px' }}>
+                  <div style={{ fontSize: 12.5, color: 'var(--color-neutral)', fontFamily: F_BODY }}>Saldo total del grupo</div>
+                  <div style={{ display: 'flex', alignItems: 'baseline', gap: 6, marginTop: 5 }}>
+                    <span style={{ fontFamily: F_HEAD, fontSize: 32, fontWeight: 800, color: 'var(--color-text-primary)', letterSpacing: '-0.02em' }}>
+                      {formatCLP(resumenGrupo.saldoTotal)}
+                    </span>
+                    <span style={{ fontSize: 14, fontWeight: 600, color: 'var(--color-text-muted)' }}>CLP</span>
+                  </div>
+                  {resumenGrupo.ultimaActividad && (
+                    <div style={{ fontSize: 11.5, color: 'var(--color-text-muted)', marginTop: 4, fontFamily: F_BODY }}>
+                      Última actividad {formatearTiempoRelativo(resumenGrupo.ultimaActividad)}
+                    </div>
+                  )}
+
+                  <div style={{ marginTop: 16, border: '1px solid var(--color-divider)', borderRadius: 12, padding: '12px 13px' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline' }}>
+                      <span style={{ fontSize: 12, color: 'var(--color-text-secondary)', fontFamily: F_BODY }}>Te deben</span>
+                      <span style={{ fontSize: 14, fontWeight: 700, color: 'var(--color-text-primary)', fontFamily: F_HEAD }}>{formatCLP(teDeben)}</span>
+                    </div>
+                  </div>
+                  <div style={{ marginTop: 10, border: '1px solid var(--color-divider)', borderRadius: 12, padding: '12px 13px' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline' }}>
+                      <span style={{ fontSize: 12, color: 'var(--color-text-secondary)', fontFamily: F_BODY }}>Debes</span>
+                      <span style={{ fontSize: 14, fontWeight: 700, color: 'var(--color-text-primary)', fontFamily: F_HEAD }}>{formatCLP(debes)}</span>
+                    </div>
+                  </div>
+                </div>
+              )
+            })()}
+
+            <div style={{ margin: '22px 2px 12px' }}>
+              <span style={{ fontFamily: F_HEAD, fontSize: 16, fontWeight: 700, letterSpacing: '-0.01em', color: 'var(--color-text-primary)' }}>
                 Saldos por persona
               </span>
-              <Link href="/historial" style={{ fontSize: 12.5, fontWeight: 600, color: 'var(--color-cta)' }}>
-                Ver todo
-              </Link>
             </div>
 
-            <div
-              role="list"
-              aria-label="Saldos con cada integrante"
-              style={{ background: 'var(--color-card)', border: '1px solid var(--color-border)', borderRadius: 18, padding: '4px 16px' }}
-            >
-              {cargando
-                ? Array.from({ length: 4 }).map((_, i) => <SkeletonRow key={i} />)
-                : saldos.map((par, i) => (
-                    <div role="listitem" key={par.integrante.id}>
-                      <FilaSaldo
-                        par={par}
-                        esUltima={i === saldos.length - 1}
-                        onClick={() => router.push(`/historial?persona=${par.integrante.id}`)}
-                      />
-                    </div>
-                  ))
-              }
-            </div>
+            {saldosPersonas.length === 0 ? (
+              <div style={{ background: 'var(--color-surface-white)', border: '1px solid var(--color-border)', borderRadius: 18, padding: '28px 18px', textAlign: 'center' }}>
+                <p style={{ margin: 0, fontSize: 13.5, color: 'var(--color-text-secondary)', fontFamily: F_BODY }}>
+                  No hay más integrantes en este grupo todavía.
+                </p>
+              </div>
+            ) : (
+              <div style={{ background: 'var(--color-surface-white)', border: '1px solid var(--color-border)', borderRadius: 18, padding: '4px 16px' }}>
+                {saldosPersonas.map((s, idx) => {
+                  const estado = s.neto > 0 ? 'te-debe' : s.neto < 0 ? 'le-debes' : 'al-dia'
+                  const pill = {
+                    'te-debe': { tint: 'var(--color-positive-tint)', border: 'var(--color-positive-border)', dot: 'var(--color-positive)', texto: 'var(--color-positive)', label: 'Te debe' },
+                    'le-debes': { tint: 'var(--color-negative-tint)', border: 'var(--color-negative-border)', dot: 'var(--color-negative)', texto: 'var(--color-negative)', label: 'Le debes' },
+                    'al-dia': { tint: 'var(--color-neutral-tint)', border: 'var(--color-neutral-border)', dot: 'var(--color-neutral-dot)', texto: 'var(--color-neutral)', label: 'Al día' },
+                  }[estado]
+                  const contenido = (
+                    <>
+                      <Avatar nombre={s.usuario.nombre} color={s.usuario.avatar_color} size={42} />
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <div style={{ fontSize: 14.5, fontWeight: 700, color: 'var(--color-text-primary)', fontFamily: F_BODY }}>{s.usuario.nombre}</div>
+                        <div style={{ fontSize: 11.5, color: 'var(--color-neutral)', marginTop: 1, fontFamily: F_BODY }}>{formatCLP(Math.abs(s.neto))}</div>
+                      </div>
+                      <div style={{
+                        display: 'inline-flex', alignItems: 'center', gap: 5, borderRadius: 100, padding: '4px 10px',
+                        border: `1px solid ${pill.border}`, background: pill.tint, flexShrink: 0,
+                      }}>
+                        <span style={{ width: 6, height: 6, borderRadius: '50%', background: pill.dot }} />
+                        <span style={{ fontSize: 11.5, fontWeight: 600, color: pill.texto, fontFamily: F_BODY }}>{pill.label}</span>
+                      </div>
+                    </>
+                  )
+                  const filaStyle: React.CSSProperties = {
+                    display: 'flex', alignItems: 'center', gap: 13, padding: '13px 0',
+                    borderBottom: idx < saldosPersonas.length - 1 ? '1px solid var(--color-divider)' : 'none',
+                  }
+                  if (estado === 'le-debes') {
+                    return (
+                      <Link key={s.usuario.id} href={`/saldos/${s.usuario.id}${grupoId ? `?grupo=${grupoId}` : ''}`} style={{ ...filaStyle, textDecoration: 'none' }}>
+                        {contenido}
+                      </Link>
+                    )
+                  }
+                  return <div key={s.usuario.id} style={filaStyle}>{contenido}</div>
+                })}
+              </div>
+            )}
           </>
         )}
-      </main>
-
-      </div>{/* end max-width wrapper */}
+      </div>
 
       <BottomNav />
-
-      {toast && (
-        <Toast mensaje={toast.mensaje} tipo={toast.tipo} onClose={() => setToast(null)} />
-      )}
-    </div>
+    </main>
   )
 }

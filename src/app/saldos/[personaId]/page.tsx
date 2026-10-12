@@ -94,7 +94,7 @@ function SaldosConPersonaGrupoInner({ personaId }: { personaId: string }) {
       usuarioId={usuarioId!}
       personaId={personaId}
       grupoId={grupoId!}
-      volverHref={grupoId ? `/?grupo=${grupoId}` : '/'}
+      volverHref={grupoId ? `/dashboard?grupo=${grupoId}` : '/'}
     />
   )
 }

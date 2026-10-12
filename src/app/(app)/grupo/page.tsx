@@ -456,7 +456,7 @@ function GrupoPageInner() {
       <div style={{ maxWidth: 440, margin: '0 auto', padding: '0 18px', paddingTop: 'max(20px, env(safe-area-inset-top, 0px))' }}>
 
         <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 20 }}>
-          <BotonVolver onClick={() => router.push('/')} />
+          <BotonVolver onClick={() => router.push(grupoId ? `/dashboard?grupo=${grupoId}` : '/')} />
           <div style={{ fontFamily: F_HEAD, fontSize: 19, fontWeight: 700, letterSpacing: '-0.01em', color: 'var(--color-text-primary)' }}>
             Grupo
           </div>

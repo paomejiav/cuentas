@@ -333,15 +333,26 @@ export async function calcularSaldosPersonal(usuarioId: string): Promise<SaldoIn
 }
 
 /**
+ * Fecha de hoy "YYYY-MM-DD" en America/Santiago — nunca `new
+ * Date().toISOString().slice(0,10)`, que usa UTC y puede adelantar un día
+ * (o retrasarlo) cerca de la medianoche según la hora del navegador o del
+ * servidor. Con esto, un gasto creado el último día del mes a las 23:30 en
+ * Chile sigue fechado ese mismo día, no al siguiente.
+ */
+export function fechaActualSantiago(): string {
+  return new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'America/Santiago', year: 'numeric', month: '2-digit', day: '2-digit',
+  }).format(new Date())
+}
+
+/**
  * Límites [desde, hasta) del mes calendario actual en America/Santiago,
  * como strings "YYYY-MM-DD" comparables directo contra `gastos.fecha`
  * (columna `date`, sin hora) — evita depender de la zona horaria del
  * navegador o el servidor.
  */
 export function limitesMesActualSantiago(): { desde: string; hasta: string } {
-  const hoy = new Intl.DateTimeFormat('en-CA', {
-    timeZone: 'America/Santiago', year: 'numeric', month: '2-digit', day: '2-digit',
-  }).format(new Date())
+  const hoy = fechaActualSantiago()
   const [anio, mes] = hoy.split('-').map(Number)
   const desde = `${anio}-${String(mes).padStart(2, '0')}-01`
   const anioProximo = mes === 12 ? anio + 1 : anio

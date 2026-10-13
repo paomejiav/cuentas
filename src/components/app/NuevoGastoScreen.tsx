@@ -10,7 +10,7 @@ import {
   listarParticipantesPosibles, listarCuentasActivasGrupo,
   type TipoDivision, type DivisionInput, type CuentaMini,
 } from '@/lib/gastos'
-import { ICONO_TIPO, listarContactosCompartidos, obtenerUsuarioMini, type UsuarioMini } from '@/lib/cuentas'
+import { ICONO_TIPO, listarContactosCompartidos, obtenerUsuarioMini, fechaActualSantiago, type UsuarioMini } from '@/lib/cuentas'
 import { formatCLP } from '@/lib/format'
 import { Avatar } from '@/components/app/Avatar'
 import { AvatarGrupo } from '@/components/app/AvatarGrupo'
@@ -188,7 +188,7 @@ function NuevoGastoScreenInner({ cuentaFija, personal }: Props) {
   const [displayMonto, setDisplayMonto] = useState('')
   const [pagadoPor, setPagadoPor] = useState('')
   const [categoria, setCategoria] = useState<Categoria>('comida')
-  const [fecha, setFecha] = useState(() => new Date().toISOString().slice(0, 10))
+  const [fecha, setFecha] = useState(fechaActualSantiago)
   const [nota, setNota] = useState('')
 
   // Paso 2 — división
@@ -328,7 +328,7 @@ function NuevoGastoScreenInner({ cuentaFija, personal }: Props) {
     setMonto(0)
     setDisplayMonto('')
     setCategoria('comida')
-    setFecha(new Date().toISOString().slice(0, 10))
+    setFecha(fechaActualSantiago())
     setNota('')
     setTipoDivision('igual')
     setParticipantes(personas.map(p => p.id))

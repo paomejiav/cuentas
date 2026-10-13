@@ -4,7 +4,8 @@ import { Suspense, useEffect, useMemo, useState } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import Link from 'next/link'
 import { supabase } from '@/lib/supabase'
-import { resolverGrupoActivo, type GrupoOpcion } from '@/lib/grupo-activo'
+import { obtenerSeleccion, seleccionarGrupo, type Seleccion, type GrupoOpcion } from '@/lib/grupo-activo'
+import { listarGruposConIntegrantes, type GrupoParaSheet } from '@/lib/grupo'
 import { listarCuentasActivasGrupo, type CuentaMini } from '@/lib/gastos'
 import { listarContactosCompartidos, type UsuarioMini } from '@/lib/cuentas'
 import {
@@ -14,6 +15,10 @@ import {
 import { CATEGORIA_EMOJI, METODO_LABEL } from '@/types/database'
 import { formatCLP } from '@/lib/format'
 import { Avatar } from '@/components/app/Avatar'
+import { AvatarGrupo } from '@/components/app/AvatarGrupo'
+import { ChipGrupo } from '@/components/app/ChipGrupo'
+import { SelectorGrupoSheet } from '@/components/app/SelectorGrupoSheet'
+import { FlujoCrearUnirseGrupo } from '@/components/app/FlujoCrearUnirseGrupo'
 import { BottomNav } from '@/components/app/BottomNav'
 
 const F_HEAD = 'var(--font-sora), sans-serif'
@@ -35,24 +40,31 @@ interface FiltroState {
 
 const FILTRO_DEFAULT: FiltroState = { cuentas: 'todas', personas: 'todas', fecha: 'todo', rangoDesde: '', rangoHasta: '' }
 
-// 'personal' no es un filtro de tipo dentro del grupo activo como los otros
-// tres — cambia el alcance completo (gastos sin grupo donde participo, ver
-// obtenerHistorialPersonal). Igual vive en la misma fila de pills, selección
-// única, por eso comparte el tipo con el resto.
-type TipoFiltro = 'todo' | 'gastos' | 'pagos' | 'personal'
+// Filtro de TIPO (qué clase de movimiento) — ortogonal al alcance
+// (Todo/Personal, ver `Alcance` más abajo). La vieja pestaña "Personal" de
+// esta fila desapareció: ahora el alcance personal se elige con el
+// segmentado nuevo, que solo aparece con "Todos los grupos".
+type TipoFiltro = 'todo' | 'gastos' | 'pagos'
+
+// Solo tiene sentido con selección "todos" — qué universo de movimientos
+// mezclar: todo (todos los grupos + personal) o solo lo personal.
+type Alcance = 'todo' | 'personal'
+
+interface GrupoTag { id: string; nombre: string }
 
 type Item =
-  | { tipo: 'gasto'; fecha: string; creado_en: string; gasto: GastoHistorial }
-  | { tipo: 'pago'; fecha: string; creado_en: string; pago: PagoHistorial }
+  | { tipo: 'gasto'; fecha: string; creado_en: string; gasto: GastoHistorial; grupoTag: GrupoTag | null }
+  | { tipo: 'pago'; fecha: string; creado_en: string; pago: PagoHistorial; grupoTag: GrupoTag | null }
 
-function pasaFiltro(item: Item, filtro: FiltroState, tipoFiltro: TipoFiltro): boolean {
+function pasaFiltro(item: Item, filtro: FiltroState, mostrarEjeCuenta: boolean, tipoFiltro: TipoFiltro): boolean {
   if (tipoFiltro === 'gastos' && item.tipo !== 'gasto') return false
   if (tipoFiltro === 'pagos' && item.tipo !== 'pago') return false
 
-  // El eje cuenta no aplica en "Personal" (gastos sin grupo, sin cuenta) —
-  // se ignora acá aunque filtro.cuentas haya quedado con algo seleccionado
-  // de una sesión previa en modo grupo, en vez de esconder todo en silencio.
-  if (tipoFiltro !== 'personal' && filtro.cuentas !== 'todas') {
+  // El eje cuenta no aplica fuera de un grupo puntual (las cuentas
+  // pertenecen a un grupo) — se ignora acá aunque filtro.cuentas haya
+  // quedado con algo seleccionado de una sesión previa, en vez de esconder
+  // todo en silencio.
+  if (mostrarEjeCuenta && filtro.cuentas !== 'todas') {
     if (item.tipo === 'pago') return false // los pagos no pertenecen a ninguna cuenta
     const key = item.gasto.cuenta_id ?? SIN_CUENTA
     if (!filtro.cuentas.has(key)) return false
@@ -130,6 +142,55 @@ function Chip({ activo, onClick, children }: { activo: boolean; onClick: () => v
   )
 }
 
+/** Etiqueta chica por fila, solo en "Todos los grupos": inicial+color del grupo, o "Personal" en gris. */
+function TagGrupoHistorial({ grupoTag }: { grupoTag: GrupoTag | null }) {
+  if (!grupoTag) {
+    return (
+      <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+        <span style={{ width: 14, height: 14, borderRadius: 5, background: 'var(--color-icon-bg)', flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+          <svg width="8" height="8" viewBox="0 0 24 24" fill="none"><circle cx="12" cy="8" r="3.4" stroke="var(--color-text-secondary)" strokeWidth="2" /><path d="M6 19.5c.5-3 3-4.8 6-4.8s5.5 1.8 6 4.8" stroke="var(--color-text-secondary)" strokeWidth="2" strokeLinecap="round" /></svg>
+        </span>
+        <span style={{ fontSize: 10.5, fontWeight: 600, color: 'var(--color-text-muted)', fontFamily: F_BODY }}>Personal</span>
+      </span>
+    )
+  }
+  return (
+    <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+      <AvatarGrupo grupoId={grupoTag.id} nombre={grupoTag.nombre} size={14} />
+      <span style={{ fontSize: 10.5, fontWeight: 600, color: 'var(--color-text-muted)', fontFamily: F_BODY, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: 90 }}>
+        {grupoTag.nombre}
+      </span>
+    </span>
+  )
+}
+
+function SegmentadoAlcance({ alcance, setAlcance }: { alcance: Alcance; setAlcance: (a: Alcance) => void }) {
+  const opciones: { id: Alcance; label: string }[] = [{ id: 'todo', label: 'Todo' }, { id: 'personal', label: 'Personal' }]
+  return (
+    <div style={{ display: 'flex', gap: 4, background: 'var(--color-card-light)', borderRadius: 12, padding: 4, marginBottom: 14 }}>
+      {opciones.map(op => {
+        const activo = alcance === op.id
+        return (
+          <button
+            key={op.id}
+            onClick={() => setAlcance(op.id)}
+            style={{
+              flex: 1, height: 38, borderRadius: 9, border: 'none', cursor: 'pointer',
+              background: activo ? 'var(--color-surface-white)' : 'transparent',
+              boxShadow: activo ? '0 3px 9px -3px rgba(24,34,26,.18)' : 'none',
+              fontSize: 13, fontWeight: 700, fontFamily: F_BODY,
+              color: activo ? 'var(--color-text-primary)' : 'var(--color-text-muted)',
+              transition: 'all 150ms ease',
+            }}
+          >
+            {op.label}
+          </button>
+        )
+      })}
+    </div>
+  )
+}
+
 export default function HistorialPage() {
   return (
     <Suspense>
@@ -142,10 +203,17 @@ function HistorialInner() {
   const router = useRouter()
   const params = useSearchParams()
 
-  const [fase, setFase] = useState<'cargando' | 'elegir-grupo' | 'ok'>('cargando')
-  const [grupos, setGrupos] = useState<GrupoOpcion[]>([])
-  const [grupoId, setGrupoId] = useState<string | null>(null)
+  const [fase, setFase] = useState<'cargando' | 'ok'>('cargando')
+  const [seleccion, setSeleccion] = useState<Seleccion>({ tipo: 'todos' })
+  const [gruposActivos, setGruposActivos] = useState<GrupoOpcion[]>([])
+  const [gruposParaSheet, setGruposParaSheet] = useState<GrupoParaSheet[]>([])
   const [usuarioId, setUsuarioId] = useState<string | null>(null)
+
+  const grupoId = seleccion.tipo === 'grupo' ? seleccion.grupoId : null
+  const grupoNombre = grupoId ? (gruposActivos.find(g => g.id === grupoId)?.nombre ?? '') : ''
+
+  const [sheetAbierto, setSheetAbierto] = useState(false)
+  const [flujoAbierto, setFlujoAbierto] = useState<'crear' | 'unirse' | null>(null)
 
   const [cuentas, setCuentas] = useState<CuentaMini[]>([])
   const [personas, setPersonas] = useState<UsuarioMini[]>([])
@@ -153,13 +221,21 @@ function HistorialInner() {
   const [pagos, setPagos] = useState<PagoHistorial[]>([])
   const [cargandoDatos, setCargandoDatos] = useState(true)
 
-  // Datos del tab "Personal" — alcance distinto (sin grupo), se cargan
-  // recién cuando el usuario entra ahí por primera vez.
+  // Alcance "personal" — tanto el de la vista Personal de "Todos los
+  // grupos" como la entrada directa ?tab=personal, mismos datos y misma
+  // lógica de siempre (gastos aislados sin grupo donde participo).
+  const [alcance, setAlcance] = useState<Alcance>('todo')
   const [contactos, setContactos] = useState<UsuarioMini[]>([])
   const [gastosPersonal, setGastosPersonal] = useState<GastoHistorial[]>([])
   const [pagosPersonal, setPagosPersonal] = useState<PagoHistorial[]>([])
   const [personalCargado, setPersonalCargado] = useState(false)
   const [cargandoPersonal, setCargandoPersonal] = useState(false)
+
+  // "Todos los grupos" + alcance "todo" — movimientos de todos los grupos
+  // activos mezclados con lo personal, cada uno con su etiqueta de origen.
+  const [itemsMixtos, setItemsMixtos] = useState<Item[]>([])
+  const [mixtoCargado, setMixtoCargado] = useState(false)
+  const [cargandoMixto, setCargandoMixto] = useState(false)
 
   const [tipoFiltro, setTipoFiltro] = useState<TipoFiltro>('todo')
   const [mostrarFiltro, setMostrarFiltro] = useState(false)
@@ -174,32 +250,34 @@ function HistorialInner() {
       if (!activo) return
       setUsuarioId(user.id)
 
-      // Entrada directa al tab Personal (ej. desde "Nuevo gasto personal"):
-      // no bloqueamos con el selector de grupo — Personal no depende de cuál
-      // esté activo. Igual resolvemos uno en segundo plano (sin preguntar,
-      // el primero si hay varios) para que cambiar a Todo/Gastos/Pagos
-      // después, en la misma visita, ya tenga con qué trabajar.
+      // Entrada directa a la vista Personal (ej. desde "Nuevo gasto
+      // personal"): fuerza selección "todos" + alcance personal, sin
+      // bloquear con nada del lado de grupos.
       if (params.get('tab') === 'personal') {
-        setTipoFiltro('personal')
+        setSeleccion({ tipo: 'todos' })
+        setAlcance('personal')
         setFase('ok')
-        const resolucion = await resolverGrupoActivo(user.id, null)
+        const [{ grupos: listaGrupos }, conIntegrantes] = await Promise.all([
+          obtenerSeleccion(user.id, null),
+          listarGruposConIntegrantes(user.id),
+        ])
         if (!activo) return
-        if (resolucion.estado === 'ok') setGrupoId(resolucion.grupoId)
-        else if (resolucion.estado === 'elegir') setGrupoId(resolucion.grupos[0]?.id ?? null)
+        setGruposActivos(listaGrupos)
+        setGruposParaSheet(conIntegrantes)
         return
       }
 
-      const resolucion = await resolverGrupoActivo(user.id, params.get('grupo'))
+      const [{ seleccion: sel, grupos: listaGrupos }, conIntegrantes] = await Promise.all([
+        obtenerSeleccion(user.id, params.get('grupo')),
+        listarGruposConIntegrantes(user.id),
+      ])
       if (!activo) return
 
-      if (resolucion.estado === 'sin-grupos') { router.replace('/'); return }
-      if (resolucion.estado === 'elegir') {
-        setGrupos(resolucion.grupos)
-        setFase('elegir-grupo')
-        return
-      }
+      if (listaGrupos.length === 0) { router.replace('/'); return }
+      setGruposParaSheet(conIntegrantes)
 
-      setGrupoId(resolucion.grupoId)
+      setGruposActivos(listaGrupos)
+      setSeleccion(sel)
       setFase('ok')
     }
     cargar()
@@ -207,7 +285,8 @@ function HistorialInner() {
   }, [router, params])
 
   useEffect(() => {
-    if (fase !== 'ok' || !grupoId) return
+    if (fase !== 'ok' || seleccion.tipo !== 'grupo') return
+    const grupoId = seleccion.grupoId
     let activo = true
     async function cargarDatos() {
       setCargandoDatos(true)
@@ -242,11 +321,15 @@ function HistorialInner() {
     cargarDatos()
     return () => { activo = false }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [fase, grupoId])
+  }, [fase, seleccion])
 
-  const enPersonal = tipoFiltro === 'personal'
+  const esTodos = seleccion.tipo === 'todos'
+  const enPersonal = esTodos && alcance === 'personal'
+  const enMixto = esTodos && alcance === 'todo'
+  const mostrarEjeCuenta = !esTodos // las cuentas pertenecen a un grupo
 
-  // Carga perezosa del tab Personal — recién la primera vez que se entra ahí.
+  // Carga perezosa de lo personal — recién la primera vez que se entra ahí
+  // (vista Personal del segmentado, o ?tab=personal).
   useEffect(() => {
     if (!enPersonal || personalCargado || !usuarioId) return
     let activo = true
@@ -262,22 +345,50 @@ function HistorialInner() {
     return () => { activo = false }
   }, [enPersonal, personalCargado, usuarioId])
 
+  // "Todos los grupos" + alcance "todo" — un gasto/pago por cada grupo
+  // activo en paralelo, más lo personal, mezclados y etiquetados por origen.
+  useEffect(() => {
+    if (!enMixto || mixtoCargado || !usuarioId) return
+    let activo = true
+    setCargandoMixto(true)
+    Promise.all([
+      Promise.all(gruposActivos.map(g => obtenerHistorialGrupo(g.id).then(h => ({ g, h })))),
+      obtenerHistorialPersonal(usuarioId),
+      listarContactosCompartidos(usuarioId),
+    ]).then(([porGrupo, personalHist, listaContactos]) => {
+      if (!activo) return
+      const items: Item[] = []
+      for (const { g, h } of porGrupo) {
+        for (const x of h.gastos) items.push({ tipo: 'gasto', fecha: x.fecha, creado_en: x.creado_en, gasto: x, grupoTag: { id: g.id, nombre: g.nombre } })
+        for (const x of h.pagos) items.push({ tipo: 'pago', fecha: x.fecha, creado_en: x.creado_en, pago: x, grupoTag: { id: g.id, nombre: g.nombre } })
+      }
+      for (const x of personalHist.gastos) items.push({ tipo: 'gasto', fecha: x.fecha, creado_en: x.creado_en, gasto: x, grupoTag: null })
+      for (const x of personalHist.pagos) items.push({ tipo: 'pago', fecha: x.fecha, creado_en: x.creado_en, pago: x, grupoTag: null })
+      setItemsMixtos(items)
+      setContactos(listaContactos)
+      setMixtoCargado(true)
+      setCargandoMixto(false)
+    })
+    return () => { activo = false }
+  }, [enMixto, mixtoCargado, usuarioId, gruposActivos])
+
   const itemsCombinados = useMemo<Item[]>(() => {
+    if (enMixto) return [...itemsMixtos].sort((a, b) => b.fecha.localeCompare(a.fecha) || b.creado_en.localeCompare(a.creado_en))
     const gastosFuente = enPersonal ? gastosPersonal : gastos
     const pagosFuente = enPersonal ? pagosPersonal : pagos
-    const g: Item[] = gastosFuente.map(x => ({ tipo: 'gasto', fecha: x.fecha, creado_en: x.creado_en, gasto: x }))
-    const p: Item[] = pagosFuente.map(x => ({ tipo: 'pago', fecha: x.fecha, creado_en: x.creado_en, pago: x }))
+    const g: Item[] = gastosFuente.map(x => ({ tipo: 'gasto', fecha: x.fecha, creado_en: x.creado_en, gasto: x, grupoTag: null }))
+    const p: Item[] = pagosFuente.map(x => ({ tipo: 'pago', fecha: x.fecha, creado_en: x.creado_en, pago: x, grupoTag: null }))
     return [...g, ...p].sort((a, b) => b.fecha.localeCompare(a.fecha) || b.creado_en.localeCompare(a.creado_en))
-  }, [enPersonal, gastos, pagos, gastosPersonal, pagosPersonal])
+  }, [enMixto, itemsMixtos, enPersonal, gastos, pagos, gastosPersonal, pagosPersonal])
 
   const itemsFiltrados = useMemo(
-    () => itemsCombinados.filter(i => pasaFiltro(i, filtroAplicado, tipoFiltro)),
-    [itemsCombinados, filtroAplicado, tipoFiltro]
+    () => itemsCombinados.filter(i => pasaFiltro(i, filtroAplicado, mostrarEjeCuenta, tipoFiltro)),
+    [itemsCombinados, filtroAplicado, mostrarEjeCuenta, tipoFiltro]
   )
 
   const previewCount = useMemo(
-    () => itemsCombinados.filter(i => pasaFiltro(i, filtroDraft, tipoFiltro)).length,
-    [itemsCombinados, filtroDraft, tipoFiltro]
+    () => itemsCombinados.filter(i => pasaFiltro(i, filtroDraft, mostrarEjeCuenta, tipoFiltro)).length,
+    [itemsCombinados, filtroDraft, mostrarEjeCuenta, tipoFiltro]
   )
 
   const agrupadoPorFecha = useMemo(() => {
@@ -291,12 +402,12 @@ function HistorialInner() {
   }, [itemsFiltrados])
 
   const countActivo =
-    (!enPersonal && filtroAplicado.cuentas !== 'todas' ? 1 : 0) +
+    (mostrarEjeCuenta && filtroAplicado.cuentas !== 'todas' ? 1 : 0) +
     (filtroAplicado.personas !== 'todas' ? 1 : 0) +
     (filtroAplicado.fecha !== 'todo' ? 1 : 0)
 
   const countDraft =
-    (!enPersonal && filtroDraft.cuentas !== 'todas' ? 1 : 0) +
+    (mostrarEjeCuenta && filtroDraft.cuentas !== 'todas' ? 1 : 0) +
     (filtroDraft.personas !== 'todas' ? 1 : 0) +
     (filtroDraft.fecha !== 'todo' ? 1 : 0)
 
@@ -351,7 +462,7 @@ function HistorialInner() {
     setFiltroAplicado(prev => ({ ...prev, fecha: 'todo', rangoDesde: '', rangoHasta: '' }))
   }
 
-  const personasFiltro = enPersonal ? contactos : personas
+  const personasFiltro = (enPersonal || enMixto) ? contactos : personas
   const nombreCuenta = (key: string) => key === SIN_CUENTA ? 'Sin cuenta' : cuentas.find(c => c.id === key)?.nombre ?? '—'
   const nombrePersona = (id: string) => id === usuarioId ? 'Tú' : personasFiltro.find(p => p.id === id)?.nombre ?? '—'
   const labelFecha = (f: FiltroState) => f.fecha === 'mes' ? 'Este mes' : f.fecha === '3meses' ? 'Últimos 3 meses' : f.fecha === 'rango' ? (f.rangoDesde && f.rangoHasta ? `${fechaCortaEs(f.rangoDesde)} – ${fechaCortaEs(f.rangoHasta)}` : 'Rango elegido') : ''
@@ -364,82 +475,59 @@ function HistorialInner() {
     )
   }
 
-  if (fase === 'elegir-grupo') {
-    return (
-      <main style={{ minHeight: '100dvh', background: 'var(--color-bg)' }}>
-        <div style={{ maxWidth: 440, margin: '0 auto', padding: '0 18px', paddingTop: 'max(24px, env(safe-area-inset-top, 0px))' }}>
-          <h1 style={{ margin: 0, fontFamily: F_HEAD, fontSize: 22, fontWeight: 800, letterSpacing: '-0.02em', color: 'var(--color-text-primary)' }}>
-            ¿Qué grupo querés ver?
-          </h1>
-          <p style={{ margin: '6px 0 20px', fontSize: 13.5, color: 'var(--color-text-secondary)', fontFamily: F_BODY }}>
-            Pertenecés a más de un grupo.
-          </p>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-            {grupos.map(g => (
-              <Link
-                key={g.id}
-                href={`/historial?grupo=${g.id}`}
-                style={{
-                  display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-                  background: 'var(--color-surface-white)', border: '1px solid var(--color-border)',
-                  borderRadius: 16, padding: '16px 18px', textDecoration: 'none',
-                }}
-              >
-                <span style={{ fontSize: 15, fontWeight: 700, color: 'var(--color-text-primary)', fontFamily: F_BODY }}>{g.nombre}</span>
-                <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M6 4l4 4-4 4" stroke="var(--color-cta)" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" /></svg>
-              </Link>
-            ))}
-          </div>
-        </div>
-      </main>
-    )
+  function handleElegirDesdeSheet(idOTodos: string) {
+    seleccionarGrupo(idOTodos, { refresh: () => {} })
+    setSheetAbierto(false)
+    router.push(`/historial?grupo=${idOTodos}`)
   }
 
-  const miPerfil = personas.find(p => p.id === usuarioId)
+  function handleListoFlujoGrupo(grupo: { id: string; nombre: string }) {
+    setFlujoAbierto(null)
+    seleccionarGrupo(grupo.id, { refresh: () => {} })
+    router.push(`/historial?grupo=${grupo.id}`)
+  }
 
   return (
     <main style={{ minHeight: '100dvh', background: 'var(--color-bg)', paddingBottom: 96 }}>
       <div style={{ maxWidth: 440, margin: '0 auto', padding: '0 18px', paddingTop: 'max(20px, env(safe-area-inset-top, 0px))' }}>
 
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
-          <div style={{ fontFamily: F_HEAD, fontSize: 23, fontWeight: 700, letterSpacing: '-0.01em', color: 'var(--color-text-primary)' }}>
-            Historial
-          </div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-            <button
-              onClick={abrirFiltro}
-              aria-label="Filtrar"
-              style={{
-                position: 'relative', width: 40, height: 40, borderRadius: 12, border: '1px solid var(--color-border)',
-                background: 'var(--color-surface-white)', display: 'flex', alignItems: 'center', justifyContent: 'center',
-                cursor: 'pointer', padding: 0,
-              }}
-            >
-              <svg width="18" height="18" viewBox="0 0 20 20" fill="none">
-                <path d="M3 5h14M6 10h8M9 15h2" stroke="var(--color-text-secondary)" strokeWidth="1.6" strokeLinecap="round" />
-              </svg>
-              {countActivo > 0 && (
-                <span style={{
-                  position: 'absolute', top: -5, right: -5, minWidth: 18, height: 18, borderRadius: 100,
-                  background: 'var(--color-cta)', color: '#fff', fontSize: 10.5, fontWeight: 700,
-                  display: 'flex', alignItems: 'center', justifyContent: 'center', border: '2px solid var(--color-bg)',
-                  fontFamily: F_BODY, padding: '0 2px',
-                }}>
-                  {countActivo}
-                </span>
-              )}
-            </button>
-            <Link href="/perfil" aria-label="Perfil" style={{ display: 'flex', flexShrink: 0 }}>
-              <Avatar nombre={miPerfil?.nombre || '?'} color={miPerfil?.avatar_color || '#A8D8B9'} size={42} />
-            </Link>
-          </div>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 14 }}>
+          <ChipGrupo grupo={grupoId ? { id: grupoId, nombre: grupoNombre } : null} onClick={() => setSheetAbierto(true)} />
+          <button
+            onClick={abrirFiltro}
+            aria-label="Filtrar"
+            style={{
+              position: 'relative', width: 40, height: 40, borderRadius: 12, border: '1px solid var(--color-border)',
+              background: 'var(--color-surface-white)', display: 'flex', alignItems: 'center', justifyContent: 'center',
+              cursor: 'pointer', padding: 0, flexShrink: 0,
+            }}
+          >
+            <svg width="18" height="18" viewBox="0 0 20 20" fill="none">
+              <path d="M3 5h14M6 10h8M9 15h2" stroke="var(--color-text-secondary)" strokeWidth="1.6" strokeLinecap="round" />
+            </svg>
+            {countActivo > 0 && (
+              <span style={{
+                position: 'absolute', top: -5, right: -5, minWidth: 18, height: 18, borderRadius: 100,
+                background: 'var(--color-cta)', color: '#fff', fontSize: 10.5, fontWeight: 700,
+                display: 'flex', alignItems: 'center', justifyContent: 'center', border: '2px solid var(--color-bg)',
+                fontFamily: F_BODY, padding: '0 2px',
+              }}>
+                {countActivo}
+              </span>
+            )}
+          </button>
         </div>
+
+        <div style={{ fontFamily: F_HEAD, fontSize: 23, fontWeight: 700, letterSpacing: '-0.01em', color: 'var(--color-text-primary)', marginBottom: 16 }}>
+          Historial
+        </div>
+
+        {esTodos && <SegmentadoAlcance alcance={alcance} setAlcance={setAlcance} />}
 
         <div style={{ display: 'flex', gap: 8, marginBottom: countActivo > 0 ? 12 : 16, flexWrap: 'wrap' }}>
           <Chip activo={tipoFiltro === 'todo'} onClick={() => setTipoFiltro('todo')}>Todo</Chip>
           <Chip activo={tipoFiltro === 'gastos'} onClick={() => setTipoFiltro('gastos')}>Gastos</Chip>
           <Chip activo={tipoFiltro === 'pagos'} onClick={() => setTipoFiltro('pagos')}>Pagos</Chip>
-          <Chip activo={enPersonal} onClick={() => setTipoFiltro('personal')}>Personal</Chip>
         </div>
 
         {enPersonal && (
@@ -460,7 +548,7 @@ function HistorialInner() {
 
         {countActivo > 0 && (
           <div style={{ display: 'flex', alignItems: 'center', gap: 7, flexWrap: 'wrap', marginBottom: 16 }}>
-            {!enPersonal && filtroAplicado.cuentas !== 'todas' && [...filtroAplicado.cuentas].map(k => (
+            {mostrarEjeCuenta && filtroAplicado.cuentas !== 'todas' && [...filtroAplicado.cuentas].map(k => (
               <span key={k} onClick={() => quitarCuenta(k)} style={{
                 display: 'inline-flex', alignItems: 'center', gap: 8, cursor: 'pointer',
                 background: 'var(--tint-cta)', border: '1px solid var(--border-cta)', color: 'var(--color-cta-dark)',
@@ -507,7 +595,7 @@ function HistorialInner() {
           </div>
         )}
 
-        {(enPersonal ? cargandoPersonal : cargandoDatos) ? (
+        {(enPersonal ? cargandoPersonal : enMixto ? cargandoMixto : cargandoDatos) ? (
           <p style={{ fontSize: 13.5, color: 'var(--color-text-secondary)', fontFamily: F_BODY }}>Cargando…</p>
         ) : itemsFiltrados.length === 0 ? (
           <div style={{ background: 'var(--color-surface-white)', border: '1px solid var(--color-border)', borderRadius: 18, padding: '32px 20px', textAlign: 'center' }}>
@@ -528,6 +616,7 @@ function HistorialInner() {
                   if (item.tipo === 'gasto') {
                     const g = item.gasto
                     const { signo, monto } = efectoGasto(g, usuarioId!)
+                    const colorEfecto = signo === '+' ? 'var(--color-positive)' : signo === '-' ? 'var(--color-negative)' : 'var(--color-neutral)'
                     return (
                       <Link key={g.id} href={`/gastos/${g.id}`} style={{
                         display: 'flex', alignItems: 'center', gap: 12, padding: '13px 0',
@@ -540,17 +629,26 @@ function HistorialInner() {
                           <div style={{ fontSize: 13.5, fontWeight: 700, color: 'var(--color-text-primary)', fontFamily: F_BODY, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                             {g.descripcion}
                           </div>
-                          <div style={{ fontSize: 11.5, color: 'var(--color-neutral)', marginTop: 1, fontFamily: F_BODY }}>
-                            {g.pagador?.id === usuarioId ? 'Tú pagaste' : `${g.pagador?.nombre ?? '—'} pagó`}
-                            {!enPersonal && ` · ${g.cuenta_nombre ?? 'Sin cuenta'}`}
-                          </div>
+                          {enMixto ? (
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 3, flexWrap: 'wrap' }}>
+                              <TagGrupoHistorial grupoTag={item.grupoTag} />
+                              <span style={{ fontSize: 11.5, fontWeight: 600, color: colorEfecto, fontFamily: F_BODY }}>
+                                {g.pagador?.id === usuarioId ? 'Pagaste tú' : `Pagó ${g.pagador?.nombre ?? '—'}`} · {signo ?? ''}{formatCLP(monto)}
+                              </span>
+                            </div>
+                          ) : (
+                            <div style={{ fontSize: 11.5, color: 'var(--color-neutral)', marginTop: 1, fontFamily: F_BODY }}>
+                              {g.pagador?.id === usuarioId ? 'Pagaste tú' : `Pagó ${g.pagador?.nombre ?? '—'}`}
+                              {mostrarEjeCuenta && ` · ${g.cuenta_nombre ?? 'Sin cuenta'}`}
+                            </div>
+                          )}
                         </div>
                         <div style={{ textAlign: 'right', flexShrink: 0 }}>
                           <div style={{ fontFamily: F_HEAD, fontSize: 14, fontWeight: 700, color: 'var(--color-text-primary)' }}>
                             {formatCLP(g.monto_total)}
                           </div>
-                          {signo && (
-                            <div style={{ fontSize: 10.5, fontWeight: 600, marginTop: 1, color: signo === '+' ? 'var(--color-positive)' : 'var(--color-negative)' }}>
+                          {!enMixto && signo && (
+                            <div style={{ fontSize: 10.5, fontWeight: 600, marginTop: 1, color: colorEfecto }}>
                               {signo}{formatCLP(monto)}
                             </div>
                           )}
@@ -577,9 +675,13 @@ function HistorialInner() {
                         <div style={{ fontSize: 13.5, fontWeight: 700, color: 'var(--color-text-primary)', fontFamily: F_BODY, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                           {label}
                         </div>
-                        <div style={{ fontSize: 11.5, color: 'var(--color-neutral)', marginTop: 1, fontFamily: F_BODY }}>
-                          {METODO_LABEL[p.metodo]}
-                        </div>
+                        {enMixto ? (
+                          <div style={{ marginTop: 3 }}><TagGrupoHistorial grupoTag={item.grupoTag} /></div>
+                        ) : (
+                          <div style={{ fontSize: 11.5, color: 'var(--color-neutral)', marginTop: 1, fontFamily: F_BODY }}>
+                            {METODO_LABEL[p.metodo]}
+                          </div>
+                        )}
                       </div>
                       <span style={{ fontFamily: F_HEAD, fontSize: 14, fontWeight: 700, color: signo ? iconColor : 'var(--color-text-primary)', flexShrink: 0 }}>
                         {signo ? `${signo}${formatCLP(monto)}` : formatCLP(p.monto)}
@@ -624,7 +726,7 @@ function HistorialInner() {
             </div>
 
             <div style={{ padding: '22px 20px 0', flex: 1, overflowY: 'auto' }}>
-              {!enPersonal && (
+              {mostrarEjeCuenta && (
                 <>
                   <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: '.09em', textTransform: 'uppercase', color: 'var(--color-text-muted)', fontFamily: F_BODY }}>Cuenta</div>
                   <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginTop: 11 }}>
@@ -641,7 +743,7 @@ function HistorialInner() {
                 </>
               )}
 
-              <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: '.09em', textTransform: 'uppercase', color: 'var(--color-text-muted)', fontFamily: F_BODY, marginTop: enPersonal ? 0 : 26 }}>Persona</div>
+              <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: '.09em', textTransform: 'uppercase', color: 'var(--color-text-muted)', fontFamily: F_BODY, marginTop: mostrarEjeCuenta ? 26 : 0 }}>Persona</div>
               <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginTop: 11 }}>
                 <Chip activo={filtroDraft.personas === 'todas'} onClick={() => setFiltroDraft(prev => ({ ...prev, personas: 'todas' }))}>Todas</Chip>
                 {personasFiltro.map(p => (
@@ -687,7 +789,7 @@ function HistorialInner() {
                   <span style={{ fontSize: 12, color: 'var(--color-cta-dark)', fontWeight: 600, fontFamily: F_BODY }}>
                     {[
                       filtroDraft.fecha !== 'todo' ? labelFecha(filtroDraft) : null,
-                      !enPersonal && filtroDraft.cuentas !== 'todas' ? [...filtroDraft.cuentas].map(nombreCuenta).join(', ') : null,
+                      mostrarEjeCuenta && filtroDraft.cuentas !== 'todas' ? [...filtroDraft.cuentas].map(nombreCuenta).join(', ') : null,
                       filtroDraft.personas !== 'todas' ? `incluye a ${[...filtroDraft.personas].map(nombrePersona).join(', ')}` : null,
                     ].filter(Boolean).join(' · ')}
                   </span>
@@ -724,6 +826,25 @@ function HistorialInner() {
             </div>
           </div>
         </>
+      )}
+
+      <SelectorGrupoSheet
+        abierto={sheetAbierto}
+        onCerrar={() => setSheetAbierto(false)}
+        grupos={gruposParaSheet}
+        seleccionActual={grupoId ?? 'todos'}
+        permitirTodos
+        onElegir={handleElegirDesdeSheet}
+        onCrearGrupo={() => { setSheetAbierto(false); setFlujoAbierto('crear') }}
+        onUnirseConCodigo={() => { setSheetAbierto(false); setFlujoAbierto('unirse') }}
+      />
+
+      {flujoAbierto && (
+        <FlujoCrearUnirseGrupo
+          pasoInicial={flujoAbierto}
+          onCerrar={() => setFlujoAbierto(null)}
+          onListo={handleListoFlujoGrupo}
+        />
       )}
     </main>
   )

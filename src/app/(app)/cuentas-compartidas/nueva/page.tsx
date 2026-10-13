@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { useSession } from '@/lib/session-store'
 import { crearCuentaCompartida, validarCuentaCompartida } from '@/lib/cuentas-compartidas'
+import { fechaActualSantiago } from '@/lib/cuentas'
 import { Avatar } from '@/components/app/Avatar'
 import { Toast } from '@/components/app/Toast'
 import { supabase } from '@/lib/supabase'
@@ -88,7 +89,7 @@ export default function NuevaCuentaCompartidaPage() {
   const [errores, setErrores] = useState<Record<string, string>>({})
 
   const [nombre, setNombre] = useState('')
-  const [fecha, setFecha] = useState(() => new Date().toISOString().slice(0, 10))
+  const [fecha, setFecha] = useState(fechaActualSantiago)
   const [participantes, setParticipantes] = useState<string[]>([])
   const [pagadoPor, setPagadoPor] = useState('')
   const [foto, setFoto] = useState<File | null>(null)

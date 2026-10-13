@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react'
 import { Avatar } from '@/components/app/Avatar'
 import { formatCLP } from '@/lib/format'
 import type { MetodoPago } from '@/types/database'
-import type { UsuarioMini } from '@/lib/cuentas'
+import { fechaActualSantiago, type UsuarioMini } from '@/lib/cuentas'
 import { registrarPagoDirecto, type DivisionASaldar } from '@/lib/pagos'
 import { supabase } from '@/lib/supabase'
 
@@ -83,7 +83,7 @@ export function RegistrarPago(props: RegistrarPagoProps) {
   const montoTotal = props.divisiones.reduce((s, d) => s + d.monto_asignado, 0)
 
   async function confirmar() {
-    const fecha = new Date().toISOString().slice(0, 10)
+    const fecha = fechaActualSantiago()
 
     setError(null)
     setGuardando(true)

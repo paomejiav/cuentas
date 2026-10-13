@@ -1,5 +1,6 @@
 import { supabase } from '@/lib/supabase'
 import type { UsuarioMini } from '@/lib/cuentas'
+import { fechaActualSantiago } from '@/lib/cuentas'
 import type { DivisionASaldar } from '@/lib/pagos'
 
 // ── Tipos ─────────────────────────────────────────────────────
@@ -389,7 +390,7 @@ export async function confirmarCancelacionesCadena(
   grupoId: string,
   cadenas: CadenaCancelada[]
 ): Promise<{ ok: true } | { ok: false; error: string }> {
-  const fecha = new Date().toISOString().slice(0, 10)
+  const fecha = fechaActualSantiago()
 
   for (const cadena of cadenas) {
     for (const arista of cadena.aristas) {
@@ -439,8 +440,7 @@ export async function confirmarCancelacionesCadena(
 // queda ninguna división pendiente en el grupo ──────────────────
 
 export function mesActualStr(): string {
-  const d = new Date()
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`
+  return fechaActualSantiago().slice(0, 7)
 }
 
 export function formatearMesLabel(mes: string): string {

@@ -133,3 +133,36 @@ export async function reiniciarCuenta(): Promise<{ error: string | null }> {
   const { error } = await supabase.rpc('reiniciar_cuenta')
   return { error: error ? error.message : null }
 }
+
+// ============================================================
+// SelectorGrupoSheet
+// ============================================================
+
+export interface GrupoParaSheet {
+  id: string
+  nombre: string
+  integrantes: number
+}
+
+/**
+ * Grupos activos del usuario con su cantidad de integrantes, para listar en
+ * SelectorGrupoSheet — una sola consulta extra (conteo de grupo_miembros de
+ * todos esos grupos a la vez), no una por grupo.
+ */
+export async function listarGruposConIntegrantes(usuarioId: string): Promise<GrupoParaSheet[]> {
+  const grupos = await listarGruposActivos(usuarioId)
+  if (grupos.length === 0) return []
+
+  const { data } = await supabase
+    .from('grupo_miembros')
+    .select('grupo_id')
+    .in('grupo_id', grupos.map(g => g.id))
+    .eq('activo', true)
+
+  const conteo = new Map<string, number>()
+  for (const fila of (data ?? []) as { grupo_id: string }[]) {
+    conteo.set(fila.grupo_id, (conteo.get(fila.grupo_id) ?? 0) + 1)
+  }
+
+  return grupos.map(g => ({ id: g.id, nombre: g.nombre, integrantes: conteo.get(g.id) ?? 1 }))
+}

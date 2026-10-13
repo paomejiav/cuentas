@@ -9,6 +9,7 @@ import { listarCuentasConResumen, ICONO_TIPO, type CuentaResumen, type ResumenGr
 import { formatCLP } from '@/lib/format'
 import { Avatar } from '@/components/app/Avatar'
 import { BottomNav } from '@/components/app/BottomNav'
+import { HeaderGrupoInterno } from '@/components/app/HeaderGrupoInterno'
 
 const F_HEAD = 'var(--font-sora), sans-serif'
 const F_BODY = 'var(--font-dm-sans), sans-serif'
@@ -99,9 +100,8 @@ function CuentasListadoInner() {
 
   const [estado, setEstado] = useState<'cargando' | 'elegir-grupo' | 'ok'>('cargando')
   const [grupos, setGrupos] = useState<GrupoOpcion[]>([])
+  const [grupoId, setGrupoId] = useState('')
   const [grupoNombre, setGrupoNombre] = useState('')
-  const [nombreUsuario, setNombreUsuario] = useState('')
-  const [avatarColor, setAvatarColor] = useState('#A8D8B9')
   const [cuentas, setCuentas] = useState<CuentaResumen[]>([])
   const [resumen, setResumen] = useState<ResumenGrupo>({ tuParteTotal: 0, pagado: 0, pendiente: 0 })
 
@@ -122,15 +122,13 @@ function CuentasListadoInner() {
         return
       }
 
-      const [{ data: usuario }, { data: grupo }, { cuentas: listaCuentas, resumen: resumenGrupo }] = await Promise.all([
-        supabase.from('usuarios').select('nombre, avatar_color').eq('id', user.id).single(),
+      const [{ data: grupo }, { cuentas: listaCuentas, resumen: resumenGrupo }] = await Promise.all([
         supabase.from('grupos').select('nombre').eq('id', resolucion.grupoId).single(),
         listarCuentasConResumen(resolucion.grupoId, user.id),
       ])
 
       if (!activo) return
-      setNombreUsuario(usuario?.nombre ?? '')
-      setAvatarColor(usuario?.avatar_color ?? '#A8D8B9')
+      setGrupoId(resolucion.grupoId)
       setGrupoNombre(grupo?.nombre ?? '')
       setCuentas(listaCuentas)
       setResumen(resumenGrupo)
@@ -182,22 +180,18 @@ function CuentasListadoInner() {
 
   const pctPagado = resumen.tuParteTotal > 0 ? (resumen.pagado / resumen.tuParteTotal) * 100 : 0
   const pctPendiente = 100 - pctPagado
-  const nuevaHref = params.get('grupo') ? `/cuentas/nueva?grupo=${params.get('grupo')}` : '/cuentas/nueva'
+  const nuevaHref = `/cuentas/nueva?grupo=${grupoId}`
 
   return (
     <main style={{ minHeight: '100dvh', background: 'var(--color-bg)', paddingBottom: 96 }}>
       <div style={{ maxWidth: 440, margin: '0 auto', padding: '0 18px', paddingTop: 'max(20px, env(safe-area-inset-top, 0px))' }}>
 
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 18 }}>
-          <div>
-            <div style={{ fontSize: 12.5, color: 'var(--color-neutral)', fontFamily: F_BODY }}>{grupoNombre}</div>
-            <div style={{ fontFamily: F_HEAD, fontSize: 23, fontWeight: 700, letterSpacing: '-0.01em', color: 'var(--color-text-primary)', marginTop: 2 }}>
-              Cuentas compartidas
-            </div>
+        <HeaderGrupoInterno grupoId={grupoId} grupoNombre={grupoNombre} rutaBase="/cuentas" />
+
+        <div style={{ marginBottom: 18 }}>
+          <div style={{ fontFamily: F_HEAD, fontSize: 23, fontWeight: 700, letterSpacing: '-0.01em', color: 'var(--color-text-primary)' }}>
+            Cuentas compartidas
           </div>
-          <Link href="/perfil" aria-label="Perfil" style={{ display: 'flex', flexShrink: 0 }}>
-            <Avatar nombre={nombreUsuario || '?'} color={avatarColor} size={42} />
-          </Link>
         </div>
 
         {cuentas.length > 0 && (

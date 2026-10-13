@@ -304,6 +304,112 @@ export async function calcularSaldosGrupo(
   return calcularSaldosDesdeGastos(gastos, usuarioId, integrantes)
 }
 
+/**
+ * Saldo neto por persona sobre los gastos aislados (sin grupo) donde el
+ * usuario participa — mismo núcleo que calcularSaldosGrupo, generalizado a
+ * un universo sin grupo. La política RLS `gastos_select` ya solo devuelve,
+ * para grupo_id null, las filas donde es_participante_gasto(id) es cierto,
+ * así que no hace falta filtrar participación acá.
+ */
+export async function calcularSaldosPersonal(usuarioId: string): Promise<SaldoIntegrante[]> {
+  const { data } = await supabase
+    .from('gastos')
+    .select('id, pagado_por, divisiones ( usuario_id, monto_asignado, saldado )')
+    .is('grupo_id', null)
+
+  const gastos = (data ?? []) as unknown as GastoConDivisiones[]
+
+  // No hay una lista previa de "integrantes de lo personal" — se arma con
+  // quien pagó y quienes tienen una división en estos mismos gastos. El
+  // nombre/color no importa para este cálculo (solo se usa el neto total).
+  const idsVistos = new Set<string>()
+  for (const g of gastos) {
+    idsVistos.add(g.pagado_por)
+    for (const d of g.divisiones) idsVistos.add(d.usuario_id)
+  }
+  const integrantes: UsuarioMini[] = Array.from(idsVistos).map(id => ({ id, nombre: '', avatar_color: '' }))
+
+  return calcularSaldosDesdeGastos(gastos, usuarioId, integrantes)
+}
+
+/**
+ * Límites [desde, hasta) del mes calendario actual en America/Santiago,
+ * como strings "YYYY-MM-DD" comparables directo contra `gastos.fecha`
+ * (columna `date`, sin hora) — evita depender de la zona horaria del
+ * navegador o el servidor.
+ */
+export function limitesMesActualSantiago(): { desde: string; hasta: string } {
+  const hoy = new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'America/Santiago', year: 'numeric', month: '2-digit', day: '2-digit',
+  }).format(new Date())
+  const [anio, mes] = hoy.split('-').map(Number)
+  const desde = `${anio}-${String(mes).padStart(2, '0')}-01`
+  const anioProximo = mes === 12 ? anio + 1 : anio
+  const mesProximo = mes === 12 ? 1 : mes + 1
+  const hasta = `${anioProximo}-${String(mesProximo).padStart(2, '0')}-01`
+  return { desde, hasta }
+}
+
+/** Total de gastos del grupo en el mes calendario actual (no la parte del usuario). */
+export async function obtenerGastoMesGrupo(grupoId: string, desde: string, hasta: string): Promise<number> {
+  const { data } = await supabase
+    .from('gastos')
+    .select('monto_total')
+    .eq('grupo_id', grupoId)
+    .gte('fecha', desde)
+    .lt('fecha', hasta)
+
+  return ((data ?? []) as { monto_total: number }[]).reduce((s, g) => s + Number(g.monto_total), 0)
+}
+
+/** Total de gastos aislados (sin grupo) del usuario en el mes calendario actual. */
+export async function obtenerGastoMesPersonal(usuarioId: string, desde: string, hasta: string): Promise<number> {
+  const { data } = await supabase
+    .from('gastos')
+    .select('monto_total')
+    .is('grupo_id', null)
+    .gte('fecha', desde)
+    .lt('fecha', hasta)
+
+  return ((data ?? []) as { monto_total: number }[]).reduce((s, g) => s + Number(g.monto_total), 0)
+}
+
+export interface GastoMesPorCuenta {
+  cuentaId: string | null // null = "General", gastos del grupo sin cuenta
+  nombre: string
+  monto: number
+}
+
+/** Gasto del mes calendario actual del grupo, agrupado por cuenta (sin cuenta → "General"). */
+export async function obtenerGastoMesPorCuenta(grupoId: string, desde: string, hasta: string): Promise<GastoMesPorCuenta[]> {
+  const [{ data: gastosRaw }, { data: cuentasRaw }] = await Promise.all([
+    supabase
+      .from('gastos')
+      .select('monto_total, cuenta_id')
+      .eq('grupo_id', grupoId)
+      .gte('fecha', desde)
+      .lt('fecha', hasta),
+    supabase.from('cuentas').select('id, nombre').eq('grupo_id', grupoId),
+  ])
+
+  const nombrePorCuenta = new Map<string, string>()
+  for (const c of (cuentasRaw ?? []) as { id: string; nombre: string }[]) nombrePorCuenta.set(c.id, c.nombre)
+
+  const montoPorCuenta = new Map<string | null, number>()
+  for (const g of (gastosRaw ?? []) as { monto_total: number; cuenta_id: string | null }[]) {
+    const clave = g.cuenta_id
+    montoPorCuenta.set(clave, (montoPorCuenta.get(clave) ?? 0) + Number(g.monto_total))
+  }
+
+  return Array.from(montoPorCuenta.entries())
+    .map(([cuentaId, monto]) => ({
+      cuentaId,
+      nombre: cuentaId ? (nombrePorCuenta.get(cuentaId) ?? '—') : 'General',
+      monto,
+    }))
+    .sort((a, b) => b.monto - a.monto)
+}
+
 export interface ResumenGastosGrupo {
   saldoTotal: number
   ultimaActividad: string | null // creado_en del gasto más reciente del grupo, o null si no hay gastos

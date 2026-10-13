@@ -102,7 +102,7 @@ export default function MisGruposPage() {
 
   function handleListoFlujo(grupo: { id: string; nombre: string }) {
     seleccionarGrupo(grupo.id, { refresh: () => {} })
-    router.push(`/dashboard?grupo=${grupo.id}`)
+    router.push(`/?grupo=${grupo.id}`)
   }
 
   if (cargando) {

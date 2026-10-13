@@ -14,6 +14,7 @@ import type { UsuarioMini } from '@/lib/cuentas'
 import { formatCLP } from '@/lib/format'
 import { Avatar } from '@/components/app/Avatar'
 import { BottomNav } from '@/components/app/BottomNav'
+import { HeaderGrupoInterno } from '@/components/app/HeaderGrupoInterno'
 import { Toast } from '@/components/app/Toast'
 import { RegistrarPago } from '@/components/app/RegistrarPago'
 
@@ -356,6 +357,7 @@ function CierreInner() {
   const [fase, setFase] = useState<'cargando' | 'elegir-grupo' | 'ok'>('cargando')
   const [grupos, setGrupos] = useState<GrupoOpcion[]>([])
   const [grupoId, setGrupoId] = useState<string | null>(null)
+  const [grupoNombre, setGrupoNombre] = useState('')
   const [usuarioId, setUsuarioId] = useState<string | null>(null)
 
   const [resumen, setResumen] = useState<ResumenCierre | null>(null)
@@ -396,6 +398,9 @@ function CierreInner() {
       }
 
       setGrupoId(resolucion.grupoId)
+      const { data: grupo } = await supabase.from('grupos').select('nombre').eq('id', resolucion.grupoId).single()
+      if (!activo) return
+      setGrupoNombre(grupo?.nombre ?? '')
       setFase('ok')
     }
     cargar()
@@ -534,6 +539,8 @@ function CierreInner() {
   return (
     <main style={{ minHeight: '100dvh', background: 'var(--color-bg)', paddingBottom: 96 }}>
       <div style={{ maxWidth: 440, margin: '0 auto', padding: '0 18px', paddingTop: 'max(20px, env(safe-area-inset-top, 0px))' }}>
+
+        <HeaderGrupoInterno grupoId={grupoId!} grupoNombre={grupoNombre} rutaBase="/cierre" />
 
         <div style={{ fontFamily: F_HEAD, fontSize: 23, fontWeight: 700, letterSpacing: '-0.01em', color: 'var(--color-text-primary)', marginBottom: 14 }}>
           Cierre de cuentas

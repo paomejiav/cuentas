@@ -16,7 +16,7 @@ const tabs: Tab[] = [
   {
     href: '/',
     label: 'Inicio',
-    isActive: p => p === '/' || p.startsWith('/dashboard') || p.startsWith('/cuentas') || p.startsWith('/cierre') || p.startsWith('/grupo') || p.startsWith('/saldos'),
+    isActive: p => p === '/' || p.startsWith('/cuentas') || p.startsWith('/cierre') || p.startsWith('/grupo') || p.startsWith('/saldos'),
     icon: active => (
       <svg width="22" height="22" viewBox="0 0 24 24" fill="none">
         <path

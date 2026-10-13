@@ -48,7 +48,7 @@ export default function AdminPage() {
   useEffect(() => {
     if (sesionLoading) return
     if (!sesion) { router.replace('/login'); return }
-    if (!sesion.es_admin) { router.replace('/dashboard'); return }
+    if (!sesion.es_admin) { router.replace('/'); return }
     cargarIntegrantes()
   }, [sesion, sesionLoading]) // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -130,8 +130,8 @@ export default function AdminPage() {
           display: 'flex', alignItems: 'center', gap: 12,
         }}>
           <button
-            onClick={() => router.replace('/dashboard')}
-            aria-label="Volver al dashboard"
+            onClick={() => router.replace('/')}
+            aria-label="Volver a Inicio"
             style={{
               background: 'var(--color-card)', border: 'none', borderRadius: 12,
               width: 40, height: 40, display: 'flex', alignItems: 'center', justifyContent: 'center',

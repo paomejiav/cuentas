@@ -1,15 +1,12 @@
 'use client'
 
 import { AvatarGrupo } from '@/components/app/AvatarGrupo'
+import type { GrupoParaSheet } from '@/lib/grupo'
+
+export type { GrupoParaSheet }
 
 const F_HEAD = 'var(--font-sora), sans-serif'
 const F_BODY = 'var(--font-dm-sans), sans-serif'
-
-export interface GrupoParaSheet {
-  id: string
-  nombre: string
-  integrantes: number
-}
 
 interface SelectorGrupoSheetProps {
   abierto: boolean

@@ -9,6 +9,7 @@ import { obtenerDetalleGrupo, actualizarNombreGrupo, salirDeGrupo, cambiarRolMie
 import { mesEnMinusculas } from '@/lib/format'
 import { Avatar } from '@/components/app/Avatar'
 import { BottomNav } from '@/components/app/BottomNav'
+import { HeaderGrupoInterno } from '@/components/app/HeaderGrupoInterno'
 
 const F_HEAD = 'var(--font-sora), sans-serif'
 const F_BODY = 'var(--font-dm-sans), sans-serif'
@@ -455,12 +456,7 @@ function GrupoPageInner() {
     <main style={{ minHeight: '100dvh', background: 'var(--color-bg)', paddingBottom: 96 }}>
       <div style={{ maxWidth: 440, margin: '0 auto', padding: '0 18px', paddingTop: 'max(20px, env(safe-area-inset-top, 0px))' }}>
 
-        <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 20 }}>
-          <BotonVolver onClick={() => router.push('/')} />
-          <div style={{ fontFamily: F_HEAD, fontSize: 19, fontWeight: 700, letterSpacing: '-0.01em', color: 'var(--color-text-primary)' }}>
-            Grupo
-          </div>
-        </div>
+        <HeaderGrupoInterno grupoId={grupoId!} grupoNombre={d.nombre} rutaBase="/grupo" />
 
         {/* ─── Card nombre del grupo ─── */}
         {editando ? (

@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react'
 import { Avatar } from '@/components/app/Avatar'
 import { formatCLP } from '@/lib/format'
 import type { MetodoPago } from '@/types/database'
-import { fechaActualSantiago, type UsuarioMini } from '@/lib/cuentas'
+import { fechaActualSantiago, formatearFechaCortaSantiago, type UsuarioMini } from '@/lib/cuentas'
 import { registrarPagoDirecto, type DivisionASaldar } from '@/lib/pagos'
 import { supabase } from '@/lib/supabase'
 
@@ -56,9 +56,6 @@ const METODOS: { id: MetodoPago; label: string; desc: string; icon: React.ReactN
   },
 ]
 
-function fechaCorta(fechaISO: string): string {
-  return new Date(fechaISO + 'T12:00:00').toLocaleDateString('es-CL', { day: 'numeric', month: 'short' })
-}
 
 export function RegistrarPago(props: RegistrarPagoProps) {
   const { miId, onCerrar } = props
@@ -199,7 +196,7 @@ export function RegistrarPago(props: RegistrarPagoProps) {
                     {d.descripcion}
                   </div>
                   <div style={{ fontSize: 11.5, color: 'var(--color-neutral)', marginTop: 1, fontFamily: 'var(--font-dm-sans), sans-serif' }}>
-                    {fechaCorta(d.fecha)}
+                    {formatearFechaCortaSantiago(d.fecha)}
                   </div>
                 </div>
                 <span style={{ fontFamily: 'var(--font-sora), sans-serif', fontSize: 14, fontWeight: 700, color: 'var(--color-text-primary)', flexShrink: 0 }}>

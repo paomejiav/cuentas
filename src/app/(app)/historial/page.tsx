@@ -7,7 +7,10 @@ import { supabase } from '@/lib/supabase'
 import { obtenerSeleccion, seleccionarGrupo, type Seleccion, type GrupoOpcion } from '@/lib/grupo-activo'
 import { listarGruposConIntegrantes, type GrupoParaSheet } from '@/lib/grupo'
 import { listarCuentasActivasGrupo, type CuentaMini } from '@/lib/gastos'
-import { listarContactosCompartidos, type UsuarioMini } from '@/lib/cuentas'
+import {
+  listarContactosCompartidos, limitesMesActualSantiago, fechaHaceMesesSantiago, formatearFechaCortaSantiago,
+  type UsuarioMini,
+} from '@/lib/cuentas'
 import {
   obtenerHistorialGrupo, obtenerHistorialPersonal, formatearEncabezadoFecha,
   type GastoHistorial, type PagoHistorial,
@@ -82,14 +85,10 @@ function pasaFiltro(item: Item, filtro: FiltroState, mostrarEjeCuenta: boolean, 
 
   if (filtro.fecha !== 'todo') {
     const fecha = item.fecha
-    const hoy = new Date()
     if (filtro.fecha === 'mes') {
-      const desde = new Date(hoy.getFullYear(), hoy.getMonth(), 1).toISOString().slice(0, 10)
-      if (fecha < desde) return false
+      if (fecha < limitesMesActualSantiago().desde) return false
     } else if (filtro.fecha === '3meses') {
-      const d = new Date(hoy)
-      d.setMonth(d.getMonth() - 3)
-      if (fecha < d.toISOString().slice(0, 10)) return false
+      if (fecha < fechaHaceMesesSantiago(3)) return false
     } else if (filtro.fecha === 'rango') {
       if (filtro.rangoDesde && fecha < filtro.rangoDesde) return false
       if (filtro.rangoHasta && fecha > filtro.rangoHasta) return false
@@ -114,10 +113,6 @@ function efectoPago(pago: PagoHistorial, usuarioId: string): { signo: '+' | '-' 
   if (pago.a_usuario_id === usuarioId) return { signo: '+', monto: pago.monto }
   if (pago.de_usuario_id === usuarioId) return { signo: '-', monto: pago.monto }
   return { signo: null, monto: 0 }
-}
-
-function fechaCortaEs(fechaISO: string): string {
-  return new Date(fechaISO + 'T12:00:00').toLocaleDateString('es-CL', { day: 'numeric', month: 'short' })
 }
 
 // ── Piezas visuales ──────────────────────────────────────────
@@ -465,7 +460,7 @@ function HistorialInner() {
   const personasFiltro = (enPersonal || enMixto) ? contactos : personas
   const nombreCuenta = (key: string) => key === SIN_CUENTA ? 'Sin cuenta' : cuentas.find(c => c.id === key)?.nombre ?? '—'
   const nombrePersona = (id: string) => id === usuarioId ? 'Tú' : personasFiltro.find(p => p.id === id)?.nombre ?? '—'
-  const labelFecha = (f: FiltroState) => f.fecha === 'mes' ? 'Este mes' : f.fecha === '3meses' ? 'Últimos 3 meses' : f.fecha === 'rango' ? (f.rangoDesde && f.rangoHasta ? `${fechaCortaEs(f.rangoDesde)} – ${fechaCortaEs(f.rangoHasta)}` : 'Rango elegido') : ''
+  const labelFecha = (f: FiltroState) => f.fecha === 'mes' ? 'Este mes' : f.fecha === '3meses' ? 'Últimos 3 meses' : f.fecha === 'rango' ? (f.rangoDesde && f.rangoHasta ? `${formatearFechaCortaSantiago(f.rangoDesde)} – ${formatearFechaCortaSantiago(f.rangoHasta)}` : 'Rango elegido') : ''
 
   if (fase === 'cargando') {
     return (

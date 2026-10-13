@@ -9,9 +9,9 @@ import { listarGruposConIntegrantes, type GrupoParaSheet } from '@/lib/grupo'
 import {
   calcularSaldosGrupo, calcularSaldosPersonal, obtenerResumenGastosGrupo,
   obtenerGastoMesGrupo, obtenerGastoMesPersonal, obtenerGastoMesPorCuenta,
-  limitesMesActualSantiago, type SaldoIntegrante, type ResumenGastosGrupo, type GastoMesPorCuenta,
+  limitesMesActualSantiago, nombreMesDeFecha, type SaldoIntegrante, type ResumenGastosGrupo, type GastoMesPorCuenta,
 } from '@/lib/cuentas'
-import { formatCLP, formatCLPConSigno, formatearTiempoRelativo, capitalizar, mesEnMinusculas } from '@/lib/format'
+import { formatCLP, formatCLPConSigno, formatearTiempoRelativo, capitalizar } from '@/lib/format'
 import { Avatar } from '@/components/app/Avatar'
 import { AvatarGrupo } from '@/components/app/AvatarGrupo'
 import { ChipGrupo } from '@/components/app/ChipGrupo'
@@ -335,6 +335,12 @@ function InicioPageInner() {
   const [seleccion, setSeleccion] = useState<Seleccion>({ tipo: 'todos' })
   const [grupos, setGrupos] = useState<GrupoParaSheet[]>([])
 
+  // Un solo cálculo del mes actual (America/Santiago) para toda la
+  // pantalla — el título "Gasto de {mes}" se arma a partir del mismo
+  // `desdeMes` que usan las consultas, así que nunca pueden desalinearse.
+  const { desde: desdeMes, hasta: hastaMes } = useMemo(() => limitesMesActualSantiago(), [])
+  const mesLabel = useMemo(() => capitalizar(nombreMesDeFecha(desdeMes)), [desdeMes])
+
   const [flujoAbierto, setFlujoAbierto] = useState<'crear' | 'unirse' | null>(null)
   const [sheetModo, setSheetModo] = useState<{ tipo: 'chip' } | { tipo: 'accion'; destino: DestinoPaso } | null>(null)
   const [primerosPasosAbierto, setPrimerosPasosAbierto] = useState(false)
@@ -388,12 +394,11 @@ function InicioPageInner() {
 
       if (sel.tipo === 'todos') {
         setCargandoTodos(true)
-        const { desde, hasta } = limitesMesActualSantiago()
         const [resultadosPorGrupo, saldosPersonal, gastoMesPersonal] = await Promise.all([
           Promise.all(listaGrupos.map(async g => {
             const [saldos, gastoMes] = await Promise.all([
               calcularSaldosGrupo(g.id, user.id),
-              obtenerGastoMesGrupo(g.id, desde, hasta),
+              obtenerGastoMesGrupo(g.id, desdeMes, hastaMes),
             ])
             const teDeben = sumarPositivos(saldos)
             const debes = sumarNegativos(saldos)
@@ -403,7 +408,7 @@ function InicioPageInner() {
             } satisfies GrupoResumenInicio
           })),
           calcularSaldosPersonal(user.id),
-          obtenerGastoMesPersonal(user.id, desde, hasta),
+          obtenerGastoMesPersonal(user.id, desdeMes, hastaMes),
         ])
         if (!activo) return
 
@@ -417,12 +422,11 @@ function InicioPageInner() {
         const grupoId = sel.grupoId
         const grupoMeta = listaGrupos.find(g => g.id === grupoId) ?? conIntegrantes.find(g => g.id === grupoId) ?? null
         setCargandoGrupo(true)
-        const { desde, hasta } = limitesMesActualSantiago()
         const [{ data: grupoRow }, resumen, saldos, porCuenta] = await Promise.all([
           supabase.from('grupos').select('nombre').eq('id', grupoId).single(),
           obtenerResumenGastosGrupo(grupoId),
           calcularSaldosGrupo(grupoId, user.id),
-          obtenerGastoMesPorCuenta(grupoId, desde, hasta),
+          obtenerGastoMesPorCuenta(grupoId, desdeMes, hastaMes),
         ])
         if (!activo) return
         setGrupoActivo({ id: grupoId, nombre: grupoRow?.nombre ?? grupoMeta?.nombre ?? '' })
@@ -435,8 +439,6 @@ function InicioPageInner() {
     cargar()
     return () => { activo = false }
   }, [router, params])
-
-  const mesLabel = useMemo(() => capitalizar(mesEnMinusculas(new Date().toISOString())), [])
 
   const filasSaldo = useMemo(() => {
     const filas = porGrupo.map(g => ({ id: g.id, nombre: g.nombre, valor: g.neto, esPersonal: false }))

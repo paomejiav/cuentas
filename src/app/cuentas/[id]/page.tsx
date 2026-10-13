@@ -6,7 +6,7 @@ import Link from 'next/link'
 import { supabase } from '@/lib/supabase'
 import {
   obtenerCuenta, obtenerMiembrosCuenta, calcularSaldoCuenta, listarGastosCuenta, calcularSaldosCuenta,
-  listarMiembrosGrupoParaCuenta, ICONO_TIPO, LABEL_TIPO,
+  listarMiembrosGrupoParaCuenta, ICONO_TIPO, LABEL_TIPO, formatearFechaCortaSantiago,
   type CuentaDetalle, type MiembroCuenta, type SaldoCuenta, type GastoDeCuenta, type SaldoIntegrante, type MiembroGrupoMini,
 } from '@/lib/cuentas'
 import { CATEGORIA_EMOJI } from '@/types/database'
@@ -356,7 +356,7 @@ export default function DetalleCuentaPage({ params }: { params: Promise<{ id: st
                       {g.descripcion}
                     </div>
                     <div style={{ fontSize: 11.5, color: 'var(--color-neutral)', marginTop: 1, fontFamily: F_BODY }}>
-                      {g.pagador?.nombre ?? '—'} · {new Date(g.fecha).toLocaleDateString('es-CL', { day: 'numeric', month: 'short' })}
+                      {g.pagador?.nombre ?? '—'} · {formatearFechaCortaSantiago(g.fecha)}
                     </div>
                   </div>
                   <span style={{ fontFamily: F_HEAD, fontSize: 14, fontWeight: 700, color: 'var(--color-text-primary)', flexShrink: 0 }}>

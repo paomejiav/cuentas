@@ -1,6 +1,6 @@
 import { supabase } from '@/lib/supabase'
 import type { Categoria, MetodoPago } from '@/types/database'
-import type { UsuarioMini } from '@/lib/cuentas'
+import { etiquetaHoyAyerSantiago, formatearFechaCortaSantiago, type UsuarioMini } from '@/lib/cuentas'
 
 // ── Tipos ─────────────────────────────────────────────────────
 
@@ -200,26 +200,19 @@ export async function obtenerHistorialPersonal(usuarioId: string): Promise<{
 }
 
 // ── Helpers de formato ───────────────────────────────────────
+//
+// "Hoy"/"Ayer" y el formato corto ("31 oct") se resuelven siempre contra
+// America/Santiago y por las partes de la fecha — nunca con new Date()
+// del dispositivo ni new Date(fecha) sobre un date-only string (eso se
+// interpreta como medianoche UTC y en Chile muestra el día anterior). Ver
+// cuentas.ts, el único módulo autorizado para esto.
 
 export function formatearFechaCorta(fecha: string): string {
-  const [year, month, day] = fecha.split('-').map(Number)
-  const d = new Date(year, month - 1, day)
-  const hoy = new Date()
-  const ayer = new Date(hoy); ayer.setDate(hoy.getDate() - 1)
-
-  if (d.toDateString() === hoy.toDateString()) return 'Hoy'
-  if (d.toDateString() === ayer.toDateString()) return 'Ayer'
-
-  return d.toLocaleDateString('es-CL', { day: 'numeric', month: 'short' })
+  return etiquetaHoyAyerSantiago(fecha) ?? formatearFechaCortaSantiago(fecha)
 }
 
 export function formatearEncabezadoFecha(fecha: string): string {
-  const corta = formatearFechaCorta(fecha)
-  if (corta === 'Hoy' || corta === 'Ayer') {
-    const [, month, day] = fecha.split('-').map(Number)
-    const d = new Date(fecha + 'T12:00:00')
-    const mes = d.toLocaleDateString('es-CL', { month: 'short' })
-    return `${corta} · ${day} ${mes}`
-  }
-  return corta
+  const etiqueta = etiquetaHoyAyerSantiago(fecha)
+  if (etiqueta) return `${etiqueta} · ${formatearFechaCortaSantiago(fecha)}`
+  return formatearFechaCortaSantiago(fecha)
 }

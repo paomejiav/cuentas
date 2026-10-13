@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
 import { listarDivisionesPendientesConPersona, type DivisionASaldar } from '@/lib/pagos'
-import type { UsuarioMini } from '@/lib/cuentas'
+import { formatearFechaCortaSantiago, type UsuarioMini } from '@/lib/cuentas'
 import { formatCLP } from '@/lib/format'
 import { Avatar } from '@/components/app/Avatar'
 import { RegistrarPago } from '@/components/app/RegistrarPago'
@@ -19,10 +19,6 @@ interface Props {
   grupoId?: string
   cuentaId?: string
   volverHref: string
-}
-
-function fechaCorta(fechaISO: string): string {
-  return new Date(fechaISO + 'T12:00:00').toLocaleDateString('es-CL', { day: 'numeric', month: 'short' })
 }
 
 export function SaldosConPersona({ usuarioId, personaId, grupoId, cuentaId, volverHref }: Props) {
@@ -134,7 +130,7 @@ export function SaldosConPersona({ usuarioId, personaId, grupoId, cuentaId, volv
                         {d.descripcion}
                       </div>
                       <div style={{ fontSize: 11.5, color: 'var(--color-neutral)', marginTop: 1, fontFamily: F_BODY }}>
-                        {fechaCorta(d.fecha)}
+                        {formatearFechaCortaSantiago(d.fecha)}
                       </div>
                     </div>
                     <span style={{ fontFamily: F_HEAD, fontSize: 14, fontWeight: 700, color: 'var(--color-text-primary)', flexShrink: 0 }}>

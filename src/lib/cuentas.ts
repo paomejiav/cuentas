@@ -361,6 +361,62 @@ export function limitesMesActualSantiago(): { desde: string; hasta: string } {
   return { desde, hasta }
 }
 
+/**
+ * Fecha "YYYY-MM-DD" de hace N meses, en America/Santiago — para filtros
+ * tipo "Últimos 3 meses". Mismo criterio que limitesMesActualSantiago: se
+ * arma a mano desde las partes de fechaActualSantiago(), nunca con
+ * new Date().toISOString() ni con la hora/zona del navegador.
+ */
+export function fechaHaceMesesSantiago(n: number): string {
+  const [anio, mes, dia] = fechaActualSantiago().split('-').map(Number)
+  const d = new Date(anio, mes - 1, dia) // constructor numérico = fecha de calendario local, sin zona/UTC de por medio
+  d.setMonth(d.getMonth() - n)
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+}
+
+// ── Fechas "YYYY-MM-DD" (columna `date`, sin hora) para mostrar ──────────
+//
+// Este archivo es el único lugar autorizado para resolver "hoy" y "mes
+// actual": todo lo de arriba (fechaActualSantiago, limitesMesActualSantiago,
+// fechaHaceMesesSantiago) y lo de abajo (formatear/comparar una fecha ya
+// guardada) vive acá para que nadie vuelva a escribir
+// `new Date().toISOString().slice(0,10)` (usa UTC, puede adelantar el día
+// cerca de medianoche en Chile) ni `new Date(fecha)` sobre una fecha sin
+// hora (los date-only strings se interpretan como medianoche UTC — en
+// Chile eso siempre muestra el día anterior). Como una fecha "YYYY-MM-DD"
+// ya es el día que importa, se formatea leyendo sus partes directo, sin
+// pasar nunca por el constructor Date(string) ni por ninguna zona horaria.
+
+const MESES_LARGOS = ['enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio', 'julio', 'agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre']
+const MESES_CORTOS = ['ene', 'feb', 'mar', 'abr', 'may', 'jun', 'jul', 'ago', 'sep', 'oct', 'nov', 'dic']
+
+/** Nombre del mes en español a partir de una fecha "YYYY-MM-DD" o "YYYY-MM" — "2026-10..." → "octubre". */
+export function nombreMesDeFecha(fecha: string, formato: 'largo' | 'corto' = 'largo'): string {
+  const mes = Number(fecha.slice(5, 7))
+  return (formato === 'largo' ? MESES_LARGOS : MESES_CORTOS)[mes - 1]
+}
+
+/** Fecha corta en español ("31 oct") a partir de "YYYY-MM-DD" — por partes, nunca via new Date(string). */
+export function formatearFechaCortaSantiago(fecha: string): string {
+  const [, , dia] = fecha.split('-')
+  return `${Number(dia)} ${nombreMesDeFecha(fecha, 'corto')}`
+}
+
+/**
+ * "Hoy" / "Ayer" si la fecha coincide con el día actual o el anterior en
+ * America/Santiago, o null si no es ninguno — comparación de strings
+ * "YYYY-MM-DD" puras, nunca contra new Date() del dispositivo.
+ */
+export function etiquetaHoyAyerSantiago(fecha: string): 'Hoy' | 'Ayer' | null {
+  const hoy = fechaActualSantiago()
+  if (fecha === hoy) return 'Hoy'
+  const [anio, mes, dia] = hoy.split('-').map(Number)
+  const d = new Date(anio, mes - 1, dia)
+  d.setDate(d.getDate() - 1)
+  const ayer = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+  return fecha === ayer ? 'Ayer' : null
+}
+
 /** Total de gastos del grupo en el mes calendario actual (no la parte del usuario). */
 export async function obtenerGastoMesGrupo(grupoId: string, desde: string, hasta: string): Promise<number> {
   const { data } = await supabase

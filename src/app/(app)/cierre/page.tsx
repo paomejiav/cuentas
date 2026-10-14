@@ -5,6 +5,7 @@ import { useRouter, useSearchParams } from 'next/navigation'
 import Link from 'next/link'
 import { supabase } from '@/lib/supabase'
 import { resolverGrupoActivo, type GrupoOpcion } from '@/lib/grupo-activo'
+import { hrefHomeGrupo } from '@/lib/grupo'
 import {
   calcularResumenCierre, registrarCierreCompleto, confirmarCancelacionesCadena,
   formatearMesLabel, mesActualStr,
@@ -540,7 +541,7 @@ function CierreInner() {
     <main style={{ minHeight: '100dvh', background: 'var(--color-bg)', paddingBottom: 96 }}>
       <div style={{ maxWidth: 440, margin: '0 auto', padding: '0 18px', paddingTop: 'max(20px, env(safe-area-inset-top, 0px))' }}>
 
-        <HeaderGrupoInterno grupoId={grupoId!} grupoNombre={grupoNombre} rutaBase="/cierre" />
+        <HeaderGrupoInterno grupoId={grupoId!} grupoNombre={grupoNombre} rutaBase="/cierre" volverHref={hrefHomeGrupo(grupoId!)} />
 
         <div style={{ fontFamily: F_HEAD, fontSize: 23, fontWeight: 700, letterSpacing: '-0.01em', color: 'var(--color-text-primary)', marginBottom: 14 }}>
           Cierre de cuentas

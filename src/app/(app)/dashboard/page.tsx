@@ -2,10 +2,11 @@
 
 import { Suspense, useEffect } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
+import { hrefHomeGrupo } from '@/lib/grupo'
 
 const F_BODY = 'var(--font-dm-sans), sans-serif'
 
-/** /dashboard se retiró — su contenido vive ahora en Inicio ("/") con el grupo elegido. */
+/** /dashboard se retiró — su contenido vive ahora en la home del grupo, dentro de Grupos. */
 export default function DashboardPage() {
   return (
     <Suspense>
@@ -20,7 +21,7 @@ function DashboardRedirect() {
 
   useEffect(() => {
     const grupoId = params.get('grupo')
-    router.replace(grupoId ? `/?grupo=${grupoId}` : '/')
+    router.replace(grupoId ? hrefHomeGrupo(grupoId) : '/mis-grupos')
   }, [router, params])
 
   return (

@@ -118,6 +118,16 @@ export interface GrupoNombre {
   nombre: string
 }
 
+/**
+ * Ruta de la home de un grupo puntual, dentro de la sección Grupos — único
+ * lugar que decide esa ruta, para no repetir el string en cada pantalla que
+ * navega ahí (header de vuelta, "Tus grupos" de Inicio, flujo crear/unirse,
+ * redirect de /dashboard, etc).
+ */
+export function hrefHomeGrupo(grupoId: string): string {
+  return `/mis-grupos/${grupoId}`
+}
+
 export async function listarGruposActivos(usuarioId: string): Promise<GrupoNombre[]> {
   const { data } = await supabase
     .from('grupo_miembros')

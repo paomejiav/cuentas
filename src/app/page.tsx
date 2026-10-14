@@ -1,20 +1,19 @@
 'use client'
 
 import { Suspense, useEffect, useMemo, useState } from 'react'
-import { useRouter, useSearchParams } from 'next/navigation'
+import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { supabase } from '@/lib/supabase'
-import { obtenerSeleccion, seleccionarGrupo, type Seleccion } from '@/lib/grupo-activo'
-import { listarGruposConIntegrantes, type GrupoParaSheet } from '@/lib/grupo'
+import { obtenerSeleccion, seleccionarGrupo } from '@/lib/grupo-activo'
+import { listarGruposConIntegrantes, hrefHomeGrupo, type GrupoParaSheet } from '@/lib/grupo'
 import {
-  calcularSaldosGrupo, calcularSaldosPersonal, obtenerResumenGastosGrupo,
-  obtenerGastoMesGrupo, obtenerGastoMesPersonal, obtenerGastoMesPorCuenta,
-  limitesMesActualSantiago, nombreMesDeFecha, type SaldoIntegrante, type ResumenGastosGrupo, type GastoMesPorCuenta,
+  calcularSaldosGrupo, calcularSaldosPersonal,
+  obtenerGastoMesGrupo, obtenerGastoMesPersonal,
+  limitesMesActualSantiago, nombreMesDeFecha, type SaldoIntegrante,
 } from '@/lib/cuentas'
-import { formatCLP, formatCLPConSigno, formatearTiempoRelativo, capitalizar } from '@/lib/format'
+import { formatCLP, formatCLPConSigno, capitalizar } from '@/lib/format'
 import { Avatar } from '@/components/app/Avatar'
 import { AvatarGrupo } from '@/components/app/AvatarGrupo'
-import { ChipGrupo } from '@/components/app/ChipGrupo'
 import { SelectorGrupoSheet } from '@/components/app/SelectorGrupoSheet'
 import { colorDeGrupo } from '@/lib/colores-grupo'
 import { BottomNav } from '@/components/app/BottomNav'
@@ -23,7 +22,7 @@ import { FlujoCrearUnirseGrupo } from '@/components/app/FlujoCrearUnirseGrupo'
 const F_HEAD = 'var(--font-sora), sans-serif'
 const F_BODY = 'var(--font-dm-sans), sans-serif'
 
-type Fase = 'cargando' | 'vacio' | 'todos' | 'grupo'
+type Fase = 'cargando' | 'vacio' | 'todos'
 
 const OCULTAR_PRIMEROS_PASOS_KEY = 'bts_primeros_pasos_oculto'
 
@@ -328,11 +327,10 @@ export default function InicioPage() {
 
 function InicioPageInner() {
   const router = useRouter()
-  const params = useSearchParams()
 
   const [fase, setFase] = useState<Fase>('cargando')
   const [nombreUsuario, setNombreUsuario] = useState('')
-  const [seleccion, setSeleccion] = useState<Seleccion>({ tipo: 'todos' })
+  const [avatarColor, setAvatarColor] = useState('#A8D8B9')
   const [grupos, setGrupos] = useState<GrupoParaSheet[]>([])
 
   // Un solo cálculo del mes actual (America/Santiago) para toda la
@@ -342,11 +340,11 @@ function InicioPageInner() {
   const mesLabel = useMemo(() => capitalizar(nombreMesDeFecha(desdeMes)), [desdeMes])
 
   const [flujoAbierto, setFlujoAbierto] = useState<'crear' | 'unirse' | null>(null)
-  const [sheetModo, setSheetModo] = useState<{ tipo: 'chip' } | { tipo: 'accion'; destino: DestinoPaso } | null>(null)
+  const [sheetModo, setSheetModo] = useState<{ tipo: 'accion'; destino: DestinoPaso } | null>(null)
   const [primerosPasosAbierto, setPrimerosPasosAbierto] = useState(false)
   const [primerosPasosOculto, setPrimerosPasosOculto] = useState(false)
 
-  // ── Datos de la vista "Todos los grupos" ──
+  // ── Datos de la vista general ──
   const [cargandoTodos, setCargandoTodos] = useState(true)
   const [porGrupo, setPorGrupo] = useState<GrupoResumenInicio[]>([])
   const [personal, setPersonal] = useState<PersonalResumen>({ neto: 0, teDeben: 0, debes: 0, gastoMes: 0 })
@@ -354,14 +352,6 @@ function InicioPageInner() {
   const [graficoTab, setGraficoTab] = useState<'saldo' | 'gasto'>('saldo')
   const [verTodoSaldo, setVerTodoSaldo] = useState(false)
   const [verTodoGasto, setVerTodoGasto] = useState(false)
-
-  // ── Datos de la vista "Un grupo elegido" ──
-  const [cargandoGrupo, setCargandoGrupo] = useState(true)
-  const [grupoActivo, setGrupoActivo] = useState<{ id: string; nombre: string } | null>(null)
-  const [resumenGrupo, setResumenGrupo] = useState<ResumenGastosGrupo>({ saldoTotal: 0, ultimaActividad: null })
-  const [saldosPersonas, setSaldosPersonas] = useState<SaldoIntegrante[]>([])
-  const [gastoPorCuenta, setGastoPorCuenta] = useState<GastoMesPorCuenta[]>([])
-  const [verTodoPersonas, setVerTodoPersonas] = useState(false)
 
   useEffect(() => {
     setPrimerosPasosOculto(leerPrimerosPasosOculto())
@@ -373,13 +363,19 @@ function InicioPageInner() {
       const { data: { user } } = await supabase.auth.getUser()
       if (!user) { router.replace('/login'); return }
 
-      const [{ data: usuario }, { seleccion: sel, grupos: listaGrupos }] = await Promise.all([
-        supabase.from('usuarios').select('nombre').eq('id', user.id).single(),
-        obtenerSeleccion(user.id, params.get('grupo')),
+      const [{ data: usuario }, { grupos: listaGrupos }] = await Promise.all([
+        supabase.from('usuarios').select('nombre, avatar_color').eq('id', user.id).single(),
+        obtenerSeleccion(user.id, 'todos'), // Inicio ignora ?grupo= y la cookie: siempre es la vista general
       ])
       if (!activo) return
       setNombreUsuario(usuario?.nombre ?? '')
-      setSeleccion(sel)
+      setAvatarColor(usuario?.avatar_color ?? '#A8D8B9')
+
+      // Al entrar a Inicio, la selección guardada vuelve a "todos" — así
+      // Historial y el "+" parten en "Todos los grupos". Sin router.refresh()
+      // (ya estamos montando esta misma pantalla, un refresh acá entraría en
+      // bucle); el no-op de abajo escribe la cookie sin refrescar nada.
+      seleccionarGrupo('todos', { refresh: () => {} })
 
       if (listaGrupos.length === 0) {
         setFase('vacio')
@@ -390,10 +386,10 @@ function InicioPageInner() {
       if (!activo) return
       setGrupos(conIntegrantes)
 
-      setFase(sel.tipo === 'todos' ? 'todos' : 'grupo')
+      setFase('todos')
 
-      if (sel.tipo === 'todos') {
-        setCargandoTodos(true)
+      setCargandoTodos(true)
+      {
         const [resultadosPorGrupo, saldosPersonal, gastoMesPersonal] = await Promise.all([
           Promise.all(listaGrupos.map(async g => {
             const [saldos, gastoMes] = await Promise.all([
@@ -418,27 +414,11 @@ function InicioPageInner() {
         setPersonal({ neto: personalTeDeben - personalDebes, teDeben: personalTeDeben, debes: personalDebes, gastoMes: gastoMesPersonal })
         setHayPersonal(saldosPersonal.length > 0)
         setCargandoTodos(false)
-      } else {
-        const grupoId = sel.grupoId
-        const grupoMeta = listaGrupos.find(g => g.id === grupoId) ?? conIntegrantes.find(g => g.id === grupoId) ?? null
-        setCargandoGrupo(true)
-        const [{ data: grupoRow }, resumen, saldos, porCuenta] = await Promise.all([
-          supabase.from('grupos').select('nombre').eq('id', grupoId).single(),
-          obtenerResumenGastosGrupo(grupoId),
-          calcularSaldosGrupo(grupoId, user.id),
-          obtenerGastoMesPorCuenta(grupoId, desdeMes, hastaMes),
-        ])
-        if (!activo) return
-        setGrupoActivo({ id: grupoId, nombre: grupoRow?.nombre ?? grupoMeta?.nombre ?? '' })
-        setResumenGrupo(resumen)
-        setSaldosPersonas(saldos)
-        setGastoPorCuenta(porCuenta.filter(c => c.monto > 0))
-        setCargandoGrupo(false)
       }
     }
     cargar()
     return () => { activo = false }
-  }, [router, params])
+  }, [router])
 
   const filasSaldo = useMemo(() => {
     const filas = porGrupo.map(g => ({ id: g.id, nombre: g.nombre, valor: g.neto, esPersonal: false }))
@@ -472,25 +452,20 @@ function InicioPageInner() {
 
   function irAGrupo(id: string) {
     seleccionarGrupo(id, { refresh: () => {} })
-    router.push(`/?grupo=${id}`)
+    router.push(hrefHomeGrupo(id))
   }
 
   function handleListoFlujo(grupo: { id: string; nombre: string }) {
     irAGrupo(grupo.id)
   }
 
-  function handleElegirDesdeSheet(idOTodos: string) {
-    seleccionarGrupo(idOTodos, { refresh: () => {} })
-    if (sheetModo?.tipo === 'accion') {
-      const destino = sheetModo.destino
-      setSheetModo(null)
-      if (destino === 'cuentas') { router.push(`/cuentas?grupo=${idOTodos}`); return }
-      if (destino === 'cierre') { router.push(`/cierre?grupo=${idOTodos}`); return }
-      router.push(`/?grupo=${idOTodos}`)
-      return
-    }
+  function handleElegirDesdeSheet(id: string) {
+    seleccionarGrupo(id, { refresh: () => {} })
+    const destino = sheetModo?.destino
     setSheetModo(null)
-    router.push(`/?grupo=${idOTodos}`)
+    if (destino === 'cuentas') { router.push(`/cuentas?grupo=${id}`); return }
+    if (destino === 'cierre') { router.push(`/cierre?grupo=${id}`); return }
+    router.push(hrefHomeGrupo(id))
   }
 
   function handlePaso(destino: DestinoPaso) {
@@ -521,8 +496,6 @@ function InicioPageInner() {
     )
   }
 
-  const grupoParaChip = fase === 'grupo' && grupoActivo ? { id: grupoActivo.id, nombre: grupoActivo.nombre } : null
-
   return (
     <main style={{ minHeight: '100dvh', background: 'var(--color-bg)', overflowX: 'hidden' }}>
       <div style={{
@@ -531,43 +504,18 @@ function InicioPageInner() {
         paddingBottom: 96, minHeight: '100dvh', boxSizing: 'border-box',
       }}>
 
-        {/* ─── Header ─── */}
-        {fase === 'vacio' ? (
-          <div style={{ marginBottom: 22 }}>
+        {/* ─── Header: Hola a la izquierda, avatar a la derecha — igual en N1 y N9 ─── */}
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: fase === 'vacio' ? 22 : 18 }}>
+          <div>
             <div style={{ fontSize: 12.5, color: 'var(--color-neutral)', fontFamily: F_BODY }}>Hola, {nombreUsuario} 👋</div>
             <div style={{ fontFamily: F_HEAD, fontSize: 24, fontWeight: 800, color: 'var(--color-text-primary)', letterSpacing: '-0.02em', marginTop: 2 }}>
-              Empecemos
+              {fase === 'vacio' ? 'Empecemos' : 'Tus grupos'}
             </div>
           </div>
-        ) : (
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 18 }}>
-            <ChipGrupo grupo={grupoParaChip} onClick={() => setSheetModo({ tipo: 'chip' })} />
-            {fase === 'grupo' && grupoActivo && (
-              <Link
-                href={`/grupo?grupo=${grupoActivo.id}`}
-                aria-label="Ajustes del grupo"
-                style={{
-                  width: 42, height: 42, borderRadius: '50%', background: 'var(--color-surface-white)',
-                  border: '1px solid var(--color-border)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0,
-                }}
-              >
-                <svg width="18" height="18" viewBox="0 0 24 24" fill="none">
-                  <circle cx="12" cy="12" r="3" stroke="var(--color-text-secondary)" strokeWidth="1.5" />
-                  <path
-                    d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 11-2.83 2.83l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 11-2.83-2.83l.06-.06a1.65 1.65 0 00.33-1.82 1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 112.83-2.83l.06.06a1.65 1.65 0 001.82.33H9a1.65 1.65 0 001-1.51V3a2 2 0 014 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 112.83 2.83l-.06.06a1.65 1.65 0 00-.33 1.82V9a1.65 1.65 0 001.51 1H21a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1z"
-                    stroke="var(--color-text-secondary)" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"
-                  />
-                </svg>
-              </Link>
-            )}
-          </div>
-        )}
-
-        {fase !== 'vacio' && (
-          <div style={{ fontSize: 12.5, color: 'var(--color-neutral)', fontFamily: F_BODY, marginBottom: fase === 'todos' ? 4 : 14 }}>
-            Hola, {nombreUsuario} 👋
-          </div>
-        )}
+          <Link href="/perfil" aria-label="Perfil" style={{ display: 'flex', flexShrink: 0, textDecoration: 'none' }}>
+            <Avatar nombre={nombreUsuario || '?'} color={avatarColor} size={42} />
+          </Link>
+        </div>
 
         {/* ═══════════ BLOQUE A · Todos los grupos ═══════════ */}
         {fase === 'todos' && (
@@ -678,8 +626,8 @@ function InicioPageInner() {
                 </BotonPrimario>
                 <BotonSecundario onClick={() => setFlujoAbierto('unirse')}>
                   <svg width="19" height="19" viewBox="0 0 24 24" fill="none">
-                    <path d="M9 12l2 2 4-4" stroke="var(--color-cta)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
-                    <rect x="3" y="4" width="18" height="16" rx="4" stroke="var(--color-text-disabled)" strokeWidth="1.6" />
+                    <rect x="3" y="4" width="18" height="16" rx="4" stroke="var(--color-text-secondary)" strokeWidth="1.6" />
+                    <path d="M7.5 9.5h9M7.5 13h9M7.5 16.5h5" stroke="var(--color-text-secondary)" strokeWidth="1.6" strokeLinecap="round" />
                   </svg>
                   <span>Unirme con código</span>
                 </BotonSecundario>
@@ -690,142 +638,6 @@ function InicioPageInner() {
                   <PrimerosPasosFila abierto={primerosPasosAbierto} onToggle={() => setPrimerosPasosAbierto(v => !v)} onPaso={handlePaso} onOcultar={handleOcultarPrimerosPasos} />
                 </div>
               )}
-            </>
-          )
-        )}
-
-        {/* ═══════════ BLOQUE B · Un grupo elegido ═══════════ */}
-        {fase === 'grupo' && grupoActivo && (
-          cargandoGrupo ? (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 12, marginTop: 10 }}>
-              {[140, 180, 140, 100].map((h, i) => <div key={i} className="skeleton" style={{ height: h, borderRadius: 18 }} />)}
-            </div>
-          ) : (
-            <>
-              {(() => {
-                const teDeben = sumarPositivos(saldosPersonas)
-                const debes = sumarNegativos(saldosPersonas)
-                return (
-                  <Card style={{ marginTop: 6 }}>
-                    <div style={{ fontSize: 12.5, color: 'var(--color-neutral)', fontFamily: F_BODY }}>Saldo total del grupo</div>
-                    <div style={{ display: 'flex', alignItems: 'baseline', gap: 6, marginTop: 5 }}>
-                      <span style={{ fontFamily: F_HEAD, fontSize: 32, fontWeight: 800, color: 'var(--color-text-primary)', letterSpacing: '-0.02em' }}>
-                        {formatCLP(resumenGrupo.saldoTotal)}
-                      </span>
-                      <span style={{ fontSize: 14, fontWeight: 600, color: 'var(--color-text-muted)' }}>CLP</span>
-                    </div>
-                    {resumenGrupo.ultimaActividad && (
-                      <div style={{ fontSize: 11.5, color: 'var(--color-text-muted)', marginTop: 4, fontFamily: F_BODY }}>
-                        Última act. {formatearTiempoRelativo(resumenGrupo.ultimaActividad)}
-                      </div>
-                    )}
-                    <BarraTeDebenDebes teDeben={teDeben} debes={debes} />
-                  </Card>
-                )
-              })()}
-
-              <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', margin: '22px 2px 12px' }}>
-                <span style={{ fontFamily: F_HEAD, fontSize: 16, fontWeight: 700, letterSpacing: '-0.01em', color: 'var(--color-text-primary)' }}>
-                  Saldos por persona
-                </span>
-                {saldosPersonas.length > 3 && (
-                  <button
-                    type="button"
-                    onClick={() => setVerTodoPersonas(v => !v)}
-                    style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 12.5, fontWeight: 600, color: 'var(--color-cta)', fontFamily: F_BODY }}
-                  >
-                    {verTodoPersonas ? 'Ver menos' : 'Ver todo'}
-                  </button>
-                )}
-              </div>
-
-              {saldosPersonas.length === 0 ? (
-                <Card style={{ padding: '28px 18px', textAlign: 'center' }}>
-                  <p style={{ margin: 0, fontSize: 13.5, color: 'var(--color-text-secondary)', fontFamily: F_BODY }}>
-                    No hay más integrantes en este grupo todavía.
-                  </p>
-                </Card>
-              ) : (
-                <Card style={{ padding: '4px 16px' }}>
-                  {(verTodoPersonas ? saldosPersonas : saldosPersonas.slice(0, 3)).map((s, idx, arr) => {
-                    const estado = s.neto > 0 ? 'te-debe' : s.neto < 0 ? 'le-debes' : 'al-dia'
-                    const pill = {
-                      'te-debe': { tint: 'var(--color-positive-tint)', border: 'var(--color-positive-border)', dot: 'var(--color-positive)', texto: 'var(--color-positive)', label: 'Te debe' },
-                      'le-debes': { tint: 'var(--color-negative-tint)', border: 'var(--color-negative-border)', dot: 'var(--color-negative)', texto: 'var(--color-negative)', label: 'Le debes' },
-                      'al-dia': { tint: 'var(--color-neutral-tint)', border: 'var(--color-neutral-border)', dot: 'var(--color-neutral-dot)', texto: 'var(--color-neutral)', label: 'Al día' },
-                    }[estado]
-                    const contenido = (
-                      <>
-                        <Avatar nombre={s.usuario.nombre} color={s.usuario.avatar_color} size={42} />
-                        <div style={{ flex: 1, minWidth: 0 }}>
-                          <div style={{ fontSize: 14.5, fontWeight: 700, color: 'var(--color-text-primary)', fontFamily: F_BODY }}>{s.usuario.nombre}</div>
-                          <div style={{ fontSize: 11.5, color: 'var(--color-neutral)', marginTop: 1, fontFamily: F_BODY }}>{formatCLP(Math.abs(s.neto))}</div>
-                        </div>
-                        <div style={{ display: 'inline-flex', alignItems: 'center', gap: 5, borderRadius: 100, padding: '4px 10px', border: `1px solid ${pill.border}`, background: pill.tint, flexShrink: 0 }}>
-                          <span style={{ width: 6, height: 6, borderRadius: '50%', background: pill.dot }} />
-                          <span style={{ fontSize: 11.5, fontWeight: 600, color: pill.texto, fontFamily: F_BODY }}>{pill.label}</span>
-                        </div>
-                      </>
-                    )
-                    const filaStyle: React.CSSProperties = { display: 'flex', alignItems: 'center', gap: 13, padding: '13px 0', borderBottom: idx < arr.length - 1 ? '1px solid var(--color-divider)' : 'none' }
-                    if (estado === 'le-debes') {
-                      return <Link key={s.usuario.id} href={`/saldos/${s.usuario.id}?grupo=${grupoActivo.id}`} style={{ ...filaStyle, textDecoration: 'none' }}>{contenido}</Link>
-                    }
-                    return <div key={s.usuario.id} style={filaStyle}>{contenido}</div>
-                  })}
-                </Card>
-              )}
-
-              {gastoPorCuenta.length > 0 && (
-                <Card style={{ marginTop: 20 }}>
-                  <div style={{ fontSize: 13.5, fontWeight: 700, color: 'var(--color-text-primary)', fontFamily: F_BODY }}>
-                    Gasto de {mesLabel.toLowerCase()} por cuenta
-                  </div>
-                  <div style={{ fontFamily: F_HEAD, fontSize: 20, fontWeight: 800, letterSpacing: '-0.02em', color: 'var(--color-text-primary)', marginTop: 4 }}>
-                    {formatCLP(gastoPorCuenta.reduce((s, c) => s + c.monto, 0))}
-                  </div>
-                  <div style={{ marginTop: 14, height: 12, borderRadius: 8, background: 'var(--color-track)', display: 'flex', overflow: 'hidden' }}>
-                    {gastoPorCuenta.map(c => {
-                      const total = gastoPorCuenta.reduce((s, x) => s + x.monto, 0)
-                      const { bg } = c.cuentaId ? colorDeGrupo(c.cuentaId) : { bg: '#D9D9DE' }
-                      return <div key={c.cuentaId ?? 'general'} style={{ width: `${(c.monto / total) * 100}%`, background: bg }} />
-                    })}
-                  </div>
-                  <div style={{ display: 'flex', flexDirection: 'column', marginTop: 12 }}>
-                    {gastoPorCuenta.map(c => {
-                      const total = gastoPorCuenta.reduce((s, x) => s + x.monto, 0)
-                      const pct = total > 0 ? Math.round((c.monto / total) * 100) : 0
-                      const { texto } = c.cuentaId ? colorDeGrupo(c.cuentaId) : { texto: '#6B7280' }
-                      return (
-                        <div key={c.cuentaId ?? 'general'} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '7px 0' }}>
-                          <span style={{ width: 10, height: 10, borderRadius: 3, background: texto, flexShrink: 0 }} />
-                          <span style={{ flex: 1, minWidth: 0, fontSize: 13, fontWeight: 600, color: 'var(--color-text-primary)', fontFamily: F_BODY, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                            {c.nombre}
-                          </span>
-                          <span style={{ fontSize: 12.5, fontWeight: 700, color: 'var(--color-text-primary)', fontFamily: F_HEAD, flexShrink: 0 }}>{formatCLP(c.monto)}</span>
-                          <span style={{ fontSize: 11, color: 'var(--color-text-muted)', fontFamily: F_BODY, flexShrink: 0, width: 34, textAlign: 'right' }}>{pct}%</span>
-                        </div>
-                      )
-                    })}
-                  </div>
-                </Card>
-              )}
-
-              <Card style={{ marginTop: 20, padding: '4px 16px' }}>
-                <FilaAccion
-                  href={`/cuentas?grupo=${grupoActivo.id}`}
-                  icono={<svg width="18" height="18" viewBox="0 0 24 24" fill="none"><path d="M6 3h9l3 3v15a1 1 0 01-1 1H6a1 1 0 01-1-1V4a1 1 0 011-1z" stroke="var(--color-cta-dark)" strokeWidth="1.6" strokeLinejoin="round" /><path d="M8.5 9h7M8.5 13h7M8.5 17h4" stroke="var(--color-cta-dark)" strokeWidth="1.6" strokeLinecap="round" /></svg>}
-                  titulo="Cuentas"
-                  subtitulo="Hogar, viajes, eventos"
-                />
-                <div style={{ height: 1, background: 'var(--color-divider)' }} />
-                <FilaAccion
-                  href={`/cierre?grupo=${grupoActivo.id}`}
-                  icono={<svg width="18" height="18" viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="9" stroke="var(--color-cta-dark)" strokeWidth="1.6" /><path d="M8 12l3 3 5-5" stroke="var(--color-cta-dark)" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" /></svg>}
-                  titulo="Cierre mensual"
-                  subtitulo="Cierra el mes y salda las deudas"
-                />
-              </Card>
             </>
           )
         )}
@@ -863,8 +675,8 @@ function InicioPageInner() {
               </BotonPrimario>
               <BotonSecundario onClick={() => setFlujoAbierto('unirse')}>
                 <svg width="19" height="19" viewBox="0 0 24 24" fill="none">
-                  <path d="M9 12l2 2 4-4" stroke="var(--color-cta)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
-                  <rect x="3" y="4" width="18" height="16" rx="4" stroke="var(--color-text-disabled)" strokeWidth="1.6" />
+                  <rect x="3" y="4" width="18" height="16" rx="4" stroke="var(--color-text-secondary)" strokeWidth="1.6" />
+                  <path d="M7.5 9.5h9M7.5 13h9M7.5 16.5h5" stroke="var(--color-text-secondary)" strokeWidth="1.6" strokeLinecap="round" />
                 </svg>
                 <span>Unirme con código</span>
               </BotonSecundario>
@@ -928,8 +740,8 @@ function InicioPageInner() {
         abierto={sheetModo !== null}
         onCerrar={() => setSheetModo(null)}
         grupos={grupos}
-        seleccionActual={seleccion.tipo === 'grupo' ? seleccion.grupoId : 'todos'}
-        permitirTodos={sheetModo?.tipo === 'chip'}
+        seleccionActual="todos"
+        permitirTodos={false}
         onElegir={handleElegirDesdeSheet}
         onCrearGrupo={() => { setSheetModo(null); setFlujoAbierto('crear') }}
         onUnirseConCodigo={() => { setSheetModo(null); setFlujoAbierto('unirse') }}

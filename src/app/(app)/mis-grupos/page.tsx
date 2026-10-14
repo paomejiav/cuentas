@@ -3,7 +3,7 @@
 import { useRouter } from 'next/navigation'
 import { useEffect, useState } from 'react'
 import { supabase } from '@/lib/supabase'
-import { listarGruposActivos, type GrupoNombre } from '@/lib/grupo'
+import { listarGruposActivos, hrefHomeGrupo, type GrupoNombre } from '@/lib/grupo'
 import { calcularSaldosGrupo } from '@/lib/cuentas'
 import { formatCLP } from '@/lib/format'
 import { seleccionarGrupo, obtenerSeleccion } from '@/lib/grupo-activo'
@@ -96,13 +96,13 @@ export default function MisGruposPage() {
   }, [router])
 
   function handleElegirGrupo(grupoId: string) {
-    seleccionarGrupo(grupoId, router)
-    router.push('/')
+    seleccionarGrupo(grupoId, { refresh: () => {} })
+    router.push(hrefHomeGrupo(grupoId))
   }
 
   function handleListoFlujo(grupo: { id: string; nombre: string }) {
     seleccionarGrupo(grupo.id, { refresh: () => {} })
-    router.push(`/?grupo=${grupo.id}`)
+    router.push(hrefHomeGrupo(grupo.id))
   }
 
   if (cargando) {
@@ -195,8 +195,8 @@ export default function MisGruposPage() {
           </BotonPrimario>
           <BotonSecundario onClick={() => setFlujoAbierto('unirse')}>
             <svg width="19" height="19" viewBox="0 0 24 24" fill="none">
-              <path d="M9 12l2 2 4-4" stroke="var(--color-cta)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
-              <rect x="3" y="4" width="18" height="16" rx="4" stroke="var(--color-text-disabled)" strokeWidth="1.6" />
+              <rect x="3" y="4" width="18" height="16" rx="4" stroke="var(--color-text-secondary)" strokeWidth="1.6" />
+              <path d="M7.5 9.5h9M7.5 13h9M7.5 16.5h5" stroke="var(--color-text-secondary)" strokeWidth="1.6" strokeLinecap="round" />
             </svg>
             <span>Unirme con código</span>
           </BotonSecundario>

@@ -5,6 +5,7 @@ import { useRouter, useSearchParams } from 'next/navigation'
 import Link from 'next/link'
 import { supabase } from '@/lib/supabase'
 import { resolverGrupoActivo, type GrupoOpcion } from '@/lib/grupo-activo'
+import { hrefHomeGrupo } from '@/lib/grupo'
 import { SaldosConPersona } from '@/components/app/SaldosConPersona'
 
 export default function SaldosConPersonaGrupoPage({ params }: { params: Promise<{ personaId: string }> }) {
@@ -94,7 +95,7 @@ function SaldosConPersonaGrupoInner({ personaId }: { personaId: string }) {
       usuarioId={usuarioId!}
       personaId={personaId}
       grupoId={grupoId!}
-      volverHref={grupoId ? `/?grupo=${grupoId}` : '/'}
+      volverHref={grupoId ? hrefHomeGrupo(grupoId) : '/mis-grupos'}
     />
   )
 }

@@ -16,7 +16,7 @@ const tabs: Tab[] = [
   {
     href: '/',
     label: 'Inicio',
-    isActive: p => p === '/' || p.startsWith('/cuentas') || p.startsWith('/cierre') || p.startsWith('/grupo') || p.startsWith('/saldos'),
+    isActive: p => p === '/',
     icon: active => (
       <svg width="22" height="22" viewBox="0 0 24 24" fill="none">
         <path
@@ -58,7 +58,7 @@ const tabs: Tab[] = [
   {
     href: '/mis-grupos',
     label: 'Grupos',
-    isActive: p => p.startsWith('/mis-grupos'),
+    isActive: p => p.startsWith('/mis-grupos') || p.startsWith('/cuentas') || p.startsWith('/cierre') || p.startsWith('/grupo') || p.startsWith('/saldos'),
     icon: active => (
       <svg width="22" height="22" viewBox="0 0 24 24" fill="none">
         <circle cx="9" cy="8" r="3.2" stroke={active ? 'var(--color-cta)' : 'var(--color-text-disabled)'} strokeWidth={active ? 2 : 1.5} />

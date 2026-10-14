@@ -72,6 +72,17 @@ export default function PerfilPage() {
     return () => { activo = false }
   }, [router])
 
+  // Vuelve a donde vino (Inicio o Más) — con fallback a /mas cuando no hay
+  // una entrada real de historial (ej. se abrió /perfil directo, sin pasar
+  // por la app).
+  function handleVolver() {
+    if (typeof window !== 'undefined' && window.history.length > 1) {
+      router.back()
+    } else {
+      router.push('/mas')
+    }
+  }
+
   function abrirModal() {
     setConfirmacion('')
     setError(null)
@@ -110,7 +121,7 @@ export default function PerfilPage() {
       <div style={{ maxWidth: 440, margin: '0 auto', padding: '0 18px', paddingTop: 'max(20px, env(safe-area-inset-top, 0px))' }}>
 
         <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 8 }}>
-          <BotonVolver onClick={() => router.push('/mas')} />
+          <BotonVolver onClick={handleVolver} />
           <div style={{ fontFamily: F_HEAD, fontSize: 19, fontWeight: 700, letterSpacing: '-0.01em', color: 'var(--color-text-primary)' }}>
             Perfil
           </div>

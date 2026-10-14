@@ -341,8 +341,8 @@ export function FlujoCrearUnirseGrupo({ pasoInicial, onCerrar, onListo }: FlujoC
                 </svg>
               ) : (
                 <svg width="28" height="28" viewBox="0 0 24 24" fill="none">
-                  <path d="M9 12l2 2 4-4" stroke="#fff" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
                   <rect x="3" y="4" width="18" height="16" rx="4" stroke="#fff" strokeWidth="1.9" />
+                  <path d="M7.5 9.5h9M7.5 13h9M7.5 16.5h5" stroke="#fff" strokeWidth="1.9" strokeLinecap="round" />
                 </svg>
               )}
             </IconBadge>

@@ -156,8 +156,8 @@ export function SelectorGrupoSheet({
           >
             <span style={{ width: 40, height: 40, borderRadius: 13, background: 'var(--color-icon-bg)', flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
               <svg width="18" height="18" viewBox="0 0 24 24" fill="none">
-                <path d="M9 12l2 2 4-4" stroke="var(--color-text-secondary)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
                 <rect x="3" y="4" width="18" height="16" rx="4" stroke="var(--color-text-secondary)" strokeWidth="1.6" />
+                <path d="M7.5 9.5h9M7.5 13h9M7.5 16.5h5" stroke="var(--color-text-secondary)" strokeWidth="1.6" strokeLinecap="round" />
               </svg>
             </span>
             <span style={{ fontSize: 14.5, fontWeight: 600, color: 'var(--color-text-primary)', fontFamily: F_BODY }}>Unirme con código</span>

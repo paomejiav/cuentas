@@ -5,7 +5,7 @@ import { useRouter, useSearchParams } from 'next/navigation'
 import Link from 'next/link'
 import { supabase } from '@/lib/supabase'
 import { resolverGrupoActivo, type GrupoOpcion } from '@/lib/grupo-activo'
-import { obtenerDetalleGrupo, actualizarNombreGrupo, salirDeGrupo, cambiarRolMiembro, sacarMiembro, type DetalleGrupo, type IntegranteActivo } from '@/lib/grupo'
+import { hrefHomeGrupo, obtenerDetalleGrupo, actualizarNombreGrupo, salirDeGrupo, cambiarRolMiembro, sacarMiembro, type DetalleGrupo, type IntegranteActivo } from '@/lib/grupo'
 import { mesEnMinusculas } from '@/lib/format'
 import { Avatar } from '@/components/app/Avatar'
 import { BottomNav } from '@/components/app/BottomNav'
@@ -456,7 +456,7 @@ function GrupoPageInner() {
     <main style={{ minHeight: '100dvh', background: 'var(--color-bg)', paddingBottom: 96 }}>
       <div style={{ maxWidth: 440, margin: '0 auto', padding: '0 18px', paddingTop: 'max(20px, env(safe-area-inset-top, 0px))' }}>
 
-        <HeaderGrupoInterno grupoId={grupoId!} grupoNombre={d.nombre} rutaBase="/grupo" />
+        <HeaderGrupoInterno grupoId={grupoId!} grupoNombre={d.nombre} rutaBase="/grupo" volverHref={hrefHomeGrupo(grupoId!)} />
 
         {/* ─── Card nombre del grupo ─── */}
         {editando ? (

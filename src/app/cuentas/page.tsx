@@ -5,6 +5,7 @@ import { useRouter, useSearchParams } from 'next/navigation'
 import Link from 'next/link'
 import { supabase } from '@/lib/supabase'
 import { resolverGrupoActivo, type GrupoOpcion } from '@/lib/grupo-activo'
+import { hrefHomeGrupo } from '@/lib/grupo'
 import { listarCuentasConResumen, ICONO_TIPO, type CuentaResumen, type ResumenGrupo } from '@/lib/cuentas'
 import { formatCLP } from '@/lib/format'
 import { Avatar } from '@/components/app/Avatar'
@@ -186,7 +187,7 @@ function CuentasListadoInner() {
     <main style={{ minHeight: '100dvh', background: 'var(--color-bg)', paddingBottom: 96 }}>
       <div style={{ maxWidth: 440, margin: '0 auto', padding: '0 18px', paddingTop: 'max(20px, env(safe-area-inset-top, 0px))' }}>
 
-        <HeaderGrupoInterno grupoId={grupoId} grupoNombre={grupoNombre} rutaBase="/cuentas" />
+        <HeaderGrupoInterno grupoId={grupoId} grupoNombre={grupoNombre} rutaBase="/cuentas" volverHref={hrefHomeGrupo(grupoId)} />
 
         <div style={{ marginBottom: 18 }}>
           <div style={{ fontFamily: F_HEAD, fontSize: 23, fontWeight: 700, letterSpacing: '-0.01em', color: 'var(--color-text-primary)' }}>

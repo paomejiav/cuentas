@@ -323,10 +323,24 @@ function HistorialInner() {
   const enMixto = esTodos && alcance === 'todo'
   const mostrarEjeCuenta = !esTodos // las cuentas pertenecen a un grupo
 
-  // Carga perezosa de lo personal — recién la primera vez que se entra ahí
-  // (vista Personal del segmentado, o ?tab=personal).
+  // Las banderas "ya cargado" de personal/mixto son por selección, no por
+  // montaje del componente: al cambiar de grupo (o volver a "todos") se
+  // invalidan para que la siguiente vez que se entre a ese modo vuelva a
+  // pedir datos frescos, en vez de quedar pegadas con el snapshot de la
+  // primera carga (la causa de que "Todos" mostrara datos viejos o
+  // incompletos tras pasar por un grupo).
   useEffect(() => {
-    if (!enPersonal || personalCargado || !usuarioId) return
+    setPersonalCargado(false)
+    setMixtoCargado(false)
+  }, [seleccion])
+
+  // Carga perezosa de lo personal — recién la primera vez que se entra ahí
+  // (vista Personal del segmentado, o ?tab=personal). Exige fase==='ok' para
+  // no disparar con usuarioId ya listo pero gruposActivos/seleccion todavía
+  // en su valor inicial (setUsuarioId comita antes que el resto del estado
+  // de la carga principal).
+  useEffect(() => {
+    if (fase !== 'ok' || !enPersonal || personalCargado || !usuarioId) return
     let activo = true
     setCargandoPersonal(true)
     Promise.all([obtenerHistorialPersonal(usuarioId), listarContactosCompartidos(usuarioId)]).then(([historial, listaContactos]) => {
@@ -338,12 +352,12 @@ function HistorialInner() {
       setCargandoPersonal(false)
     })
     return () => { activo = false }
-  }, [enPersonal, personalCargado, usuarioId])
+  }, [fase, enPersonal, personalCargado, usuarioId])
 
   // "Todos los grupos" + alcance "todo" — un gasto/pago por cada grupo
   // activo en paralelo, más lo personal, mezclados y etiquetados por origen.
   useEffect(() => {
-    if (!enMixto || mixtoCargado || !usuarioId) return
+    if (fase !== 'ok' || !enMixto || mixtoCargado || !usuarioId) return
     let activo = true
     setCargandoMixto(true)
     Promise.all([
@@ -365,7 +379,7 @@ function HistorialInner() {
       setCargandoMixto(false)
     })
     return () => { activo = false }
-  }, [enMixto, mixtoCargado, usuarioId, gruposActivos])
+  }, [fase, enMixto, mixtoCargado, usuarioId, gruposActivos])
 
   const itemsCombinados = useMemo<Item[]>(() => {
     if (enMixto) return [...itemsMixtos].sort((a, b) => b.fecha.localeCompare(a.fecha) || b.creado_en.localeCompare(a.creado_en))

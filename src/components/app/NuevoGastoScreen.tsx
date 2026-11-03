@@ -1,6 +1,6 @@
 'use client'
 
-import { Suspense, useEffect, useState, useMemo } from 'react'
+import { Suspense, useEffect, useState, useMemo, useRef } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
 import { obtenerSeleccion } from '@/lib/grupo-activo'
@@ -57,6 +57,18 @@ function focusInput(e: React.FocusEvent<HTMLInputElement | HTMLTextAreaElement>)
 }
 function blurInput(e: React.FocusEvent<HTMLInputElement | HTMLTextAreaElement>) {
   e.target.style.borderColor = 'var(--color-border)'
+}
+
+// Reparto automático de Porcentajes: floor(100/n) para todos salvo el
+// último, que absorbe el resto — mismo criterio que calcularMontosPorPersona
+// usa para el monto real, así siempre suma exactamente 100.
+function repartoPorcentajeInicial(participantes: string[]): DivisionInput[] {
+  if (participantes.length === 0) return []
+  const base = Math.floor(100 / participantes.length)
+  return participantes.map((id, i) => ({
+    usuario_id: id,
+    valor: i === participantes.length - 1 ? 100 - base * (participantes.length - 1) : base,
+  }))
 }
 
 // ── Sub-componentes ──────────────────────────────────────────
@@ -195,6 +207,10 @@ function NuevoGastoScreenInner({ cuentaFija, personal }: Props) {
   const [participantes, setParticipantes] = useState<string[]>([])
   const [tipoDivision, setTipoDivision] = useState<TipoDivision>('igual')
   const [divisionValues, setDivisionValues] = useState<DivisionInput[]>([])
+  // true desde que la persona edita un porcentaje a mano — mientras no pase
+  // eso, cada cambio de participantes vuelve a repartir 100% automático.
+  const [porcentajeTocado, setPorcentajeTocado] = useState(false)
+  const tipoDivisionAnteriorRef = useRef<TipoDivision>('igual')
 
   function handleMontoChange(e: React.ChangeEvent<HTMLInputElement>) {
     const digits = e.target.value.replace(/\D/g, '')
@@ -284,10 +300,37 @@ function NuevoGastoScreenInner({ cuentaFija, personal }: Props) {
     return () => { activo = false }
   }, [fase, grupoId, cuentaSeleccionadaId, usuarioId, personal])
 
-  // Recalcular divisionValues al cambiar participantes o tipo
+  // Recalcular divisionValues al cambiar participantes o tipo.
+  //
+  // Al cambiar de PESTAÑA (tipoDivision): reinicio completo, como siempre
+  // — incluye volver a repartir 100% automático en Porcentajes.
+  //
+  // Al cambiar solo los PARTICIPANTES (misma pestaña): conservo el valor de
+  // quienes siguen (nadie pierde lo que ya tenía tipeado) y quien entra
+  // parte en 0 — salvo en Porcentajes mientras nadie haya tocado nada a
+  // mano, donde conviene seguir repartiendo 100% automático entre los
+  // participantes actuales.
   useEffect(() => {
-    setDivisionValues(
-      participantes.map(id => ({ usuario_id: id, valor: tipoDivision === 'porcentaje' ? Math.round(100 / participantes.length) : 0 }))
+    const cambioDeTipo = tipoDivisionAnteriorRef.current !== tipoDivision
+    tipoDivisionAnteriorRef.current = tipoDivision
+
+    if (cambioDeTipo) {
+      setPorcentajeTocado(false)
+      setDivisionValues(
+        tipoDivision === 'porcentaje'
+          ? repartoPorcentajeInicial(participantes)
+          : participantes.map(id => ({ usuario_id: id, valor: 0 }))
+      )
+      return
+    }
+
+    if (tipoDivision === 'porcentaje' && !porcentajeTocado) {
+      setDivisionValues(repartoPorcentajeInicial(participantes))
+      return
+    }
+
+    setDivisionValues(prev =>
+      participantes.map(id => ({ usuario_id: id, valor: prev.find(d => d.usuario_id === id)?.valor ?? 0 }))
     )
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [participantes, tipoDivision])
@@ -307,6 +350,7 @@ function NuevoGastoScreenInner({ cuentaFija, personal }: Props) {
   }
 
   function setDivisionValor(id: string, valor: number) {
+    if (tipoDivision === 'porcentaje') setPorcentajeTocado(true)
     setDivisionValues(prev => prev.map(d => d.usuario_id === id ? { ...d, valor } : d))
   }
 
@@ -926,29 +970,33 @@ function NuevoGastoScreenInner({ cuentaFija, personal }: Props) {
                 </Section>
               )}
 
-              {/* Banner de cuadre */}
-              <div style={{
-                marginBottom: 16, borderRadius: 14, padding: '14px 16px',
-                display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-                background: cuadrado ? 'var(--tint-cta)' : 'var(--color-negative-tint)',
-                border: `1px solid ${cuadrado ? 'var(--border-cta)' : 'var(--color-negative-border)'}`,
-              }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 9 }}>
-                  {cuadrado ? (
-                    <svg width="18" height="18" viewBox="0 0 20 20" fill="none"><circle cx="10" cy="10" r="8" stroke="var(--color-positive)" strokeWidth="1.6" /><path d="M6.5 10l2.4 2.4L14 7.5" stroke="var(--color-positive)" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" /></svg>
-                  ) : (
-                    <svg width="18" height="18" viewBox="0 0 20 20" fill="none"><circle cx="10" cy="10" r="8" stroke="var(--color-negative)" strokeWidth="1.6" /><path d="M10 6v5M10 13.5v.1" stroke="var(--color-negative)" strokeWidth="1.8" strokeLinecap="round" /></svg>
-                  )}
-                  <span style={{ fontSize: 13, fontWeight: 600, color: cuadrado ? '#4C3FB0' : 'var(--color-negative)', fontFamily: 'var(--font-dm-sans), sans-serif' }}>
-                    {cuadrado ? 'Todo cuadra' : 'No cuadra'}
+              {/* Banner de cuadre — no aplica a Partes iguales: ahí no hay
+                  nada que la persona tenga que hacer cuadrar, el reparto es
+                  automático y siempre exacto. */}
+              {tipoDivision !== 'igual' && (
+                <div style={{
+                  marginBottom: 16, borderRadius: 14, padding: '14px 16px',
+                  display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                  background: cuadrado ? 'var(--tint-cta)' : 'var(--color-negative-tint)',
+                  border: `1px solid ${cuadrado ? 'var(--border-cta)' : 'var(--color-negative-border)'}`,
+                }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 9 }}>
+                    {cuadrado ? (
+                      <svg width="18" height="18" viewBox="0 0 20 20" fill="none"><circle cx="10" cy="10" r="8" stroke="var(--color-positive)" strokeWidth="1.6" /><path d="M6.5 10l2.4 2.4L14 7.5" stroke="var(--color-positive)" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" /></svg>
+                    ) : (
+                      <svg width="18" height="18" viewBox="0 0 20 20" fill="none"><circle cx="10" cy="10" r="8" stroke="var(--color-negative)" strokeWidth="1.6" /><path d="M10 6v5M10 13.5v.1" stroke="var(--color-negative)" strokeWidth="1.8" strokeLinecap="round" /></svg>
+                    )}
+                    <span style={{ fontSize: 13, fontWeight: 600, color: cuadrado ? '#4C3FB0' : 'var(--color-negative)', fontFamily: 'var(--font-dm-sans), sans-serif' }}>
+                      {cuadrado ? 'Todo cuadra' : 'No cuadra'}
+                    </span>
+                  </div>
+                  <span style={{ fontFamily: 'var(--font-sora), sans-serif', fontSize: 15, fontWeight: 700, color: cuadrado ? '#4C3FB0' : 'var(--color-negative)' }}>
+                    {tipoDivision === 'porcentaje'
+                      ? `${sumaValores.toFixed(0)}% / 100%`
+                      : `${formatCLP(sumaValores)} / ${formatCLP(monto)}`}
                   </span>
                 </div>
-                <span style={{ fontFamily: 'var(--font-sora), sans-serif', fontSize: 15, fontWeight: 700, color: cuadrado ? '#4C3FB0' : 'var(--color-negative)' }}>
-                  {tipoDivision === 'porcentaje'
-                    ? `${sumaValores.toFixed(0)}% / 100%`
-                    : `${formatCLP(sumaValores)} / ${formatCLP(monto)}`}
-                </span>
-              </div>
+              )}
               {errores.divisiones && <ErrorMsg mensaje={errores.divisiones} />}
 
               <BotonCTA onClick={handleGuardar} loading={guardando}>

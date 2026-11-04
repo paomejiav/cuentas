@@ -59,16 +59,16 @@ function blurInput(e: React.FocusEvent<HTMLInputElement | HTMLTextAreaElement>) 
   e.target.style.borderColor = 'var(--color-border)'
 }
 
-// Reparto automático de Porcentajes: floor(100/n) para todos salvo el
-// último, que absorbe el resto — mismo criterio que calcularMontosPorPersona
-// usa para el monto real, así siempre suma exactamente 100.
+// Reparto automático de Porcentajes: floor(100/n) para todos, y el resto
+// (100 mod n) se reparte de a un punto entre las primeras r personas — así
+// la diferencia máxima entre cualquier par es de 1 punto (nunca una sola
+// persona absorbiendo 2-4 puntos de más) y la suma sigue dando 100 exacto.
 function repartoPorcentajeInicial(participantes: string[]): DivisionInput[] {
-  if (participantes.length === 0) return []
-  const base = Math.floor(100 / participantes.length)
-  return participantes.map((id, i) => ({
-    usuario_id: id,
-    valor: i === participantes.length - 1 ? 100 - base * (participantes.length - 1) : base,
-  }))
+  const n = participantes.length
+  if (n === 0) return []
+  const base = Math.floor(100 / n)
+  const resto = 100 - base * n
+  return participantes.map((id, i) => ({ usuario_id: id, valor: i < resto ? base + 1 : base }))
 }
 
 // ── Sub-componentes ──────────────────────────────────────────

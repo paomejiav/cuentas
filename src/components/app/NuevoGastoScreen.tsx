@@ -206,10 +206,12 @@ function NuevoGastoScreenInner({ cuentaFija, personal }: Props) {
   // Paso 2 — división
   const [participantes, setParticipantes] = useState<string[]>([])
   const [tipoDivision, setTipoDivision] = useState<TipoDivision>('igual')
-  const [divisionValues, setDivisionValues] = useState<DivisionInput[]>([])
-  // true desde que la persona edita un porcentaje a mano — mientras no pase
-  // eso, cada cambio de participantes vuelve a repartir 100% automático.
-  const [porcentajeTocado, setPorcentajeTocado] = useState(false)
+  // Quién escribió su valor a mano (manual) vs. a quién se le rellena solo
+  // (automático). "manual" vive acá, no en divisionValues, porque un campo
+  // vacío y un campo con "0" tienen que distinguirse — y divisionValues solo
+  // guarda el número final, no si vino de la persona o del reparto.
+  const [manualIds, setManualIds] = useState<Set<string>>(new Set())
+  const [textos, setTextos] = useState<Record<string, string>>({})
   const tipoDivisionAnteriorRef = useRef<TipoDivision>('igual')
 
   function handleMontoChange(e: React.ChangeEvent<HTMLInputElement>) {
@@ -288,7 +290,6 @@ function NuevoGastoScreenInner({ cuentaFija, personal }: Props) {
       if (!activo) return
       setPersonas(lista)
       setParticipantes(lista.map(p => p.id))
-      setDivisionValues(lista.map(p => ({ usuario_id: p.id, valor: 0 })))
       setPagadoPor(prev => {
         if (prev && lista.some(p => p.id === prev)) return prev
         if (usuarioId && lista.some(p => p.id === usuarioId)) return usuarioId
@@ -300,40 +301,74 @@ function NuevoGastoScreenInner({ cuentaFija, personal }: Props) {
     return () => { activo = false }
   }, [fase, grupoId, cuentaSeleccionadaId, usuarioId, personal])
 
-  // Recalcular divisionValues al cambiar participantes o tipo.
-  //
-  // Al cambiar de PESTAÑA (tipoDivision): reinicio completo, como siempre
-  // — incluye volver a repartir 100% automático en Porcentajes.
-  //
-  // Al cambiar solo los PARTICIPANTES (misma pestaña): conservo el valor de
-  // quienes siguen (nadie pierde lo que ya tenía tipeado) y quien entra
-  // parte en 0 — salvo en Porcentajes mientras nadie haya tocado nada a
-  // mano, donde conviene seguir repartiendo 100% automático entre los
-  // participantes actuales.
+  // Al cambiar de PESTAÑA (tipoDivision): nadie es manual todavía, como
+  // siempre. Al cambiar solo los PARTICIPANTES (misma pestaña): conservo
+  // quién sigue siendo manual (y su texto); quien sale pierde su valor;
+  // quien entra queda automático.
   useEffect(() => {
     const cambioDeTipo = tipoDivisionAnteriorRef.current !== tipoDivision
     tipoDivisionAnteriorRef.current = tipoDivision
 
     if (cambioDeTipo) {
-      setPorcentajeTocado(false)
-      setDivisionValues(
-        tipoDivision === 'porcentaje'
-          ? repartoPorcentajeInicial(participantes)
-          : participantes.map(id => ({ usuario_id: id, valor: 0 }))
-      )
+      setManualIds(new Set())
+      setTextos({})
       return
     }
 
-    if (tipoDivision === 'porcentaje' && !porcentajeTocado) {
-      setDivisionValues(repartoPorcentajeInicial(participantes))
-      return
-    }
-
-    setDivisionValues(prev =>
-      participantes.map(id => ({ usuario_id: id, valor: prev.find(d => d.usuario_id === id)?.valor ?? 0 }))
-    )
+    setManualIds(prev => {
+      const next = new Set<string>()
+      prev.forEach(id => { if (participantes.includes(id)) next.add(id) })
+      return next
+    })
+    setTextos(prev => {
+      const next: Record<string, string> = {}
+      participantes.forEach(id => { if (prev[id] !== undefined) next[id] = prev[id] })
+      return next
+    })
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [participantes, tipoDivision])
+
+  // divisionValues: derivado de quién es manual (y lo que escribió) más el
+  // autorrelleno de las automáticas. Nunca es estado propio — se recalcula
+  // en cada render a partir de manualIds/textos, así siempre está al día
+  // con lo que se ve y es exactamente lo que se valida y se guarda.
+  const divisionValues = useMemo<DivisionInput[]>(() => {
+    if (tipoDivision === 'igual') {
+      return participantes.map(id => ({ usuario_id: id, valor: 0 }))
+    }
+
+    if (manualIds.size === 0) {
+      return tipoDivision === 'porcentaje'
+        ? repartoPorcentajeInicial(participantes)
+        : participantes.map(id => ({ usuario_id: id, valor: 0 }))
+    }
+
+    const total = tipoDivision === 'porcentaje' ? 100 : monto
+    const manualVal: Record<string, number> = {}
+    participantes.forEach(id => {
+      if (manualIds.has(id)) manualVal[id] = parseInt(textos[id] || '0', 10) || 0
+    })
+    const sumaManual = participantes.reduce((s, id) => s + (manualVal[id] ?? 0), 0)
+    const automaticos = participantes.filter(id => !manualIds.has(id))
+    const faltante = total - sumaManual
+
+    if (automaticos.length === 0 || faltante <= 0) {
+      return participantes.map(id => ({
+        usuario_id: id,
+        valor: manualIds.has(id) ? manualVal[id] : 0,
+      }))
+    }
+
+    const base = Math.floor(faltante / automaticos.length)
+    const resto = faltante - base * automaticos.length
+    let i = 0
+    return participantes.map(id => {
+      if (manualIds.has(id)) return { usuario_id: id, valor: manualVal[id] }
+      const valor = i < resto ? base + 1 : base
+      i++
+      return { usuario_id: id, valor }
+    })
+  }, [participantes, tipoDivision, manualIds, textos, monto])
 
   const preview = useMemo(() => {
     if (monto <= 0 || participantes.length === 0) return {}
@@ -349,9 +384,26 @@ function NuevoGastoScreenInner({ cuentaFija, personal }: Props) {
     )
   }
 
-  function setDivisionValor(id: string, valor: number) {
-    if (tipoDivision === 'porcentaje') setPorcentajeTocado(true)
-    setDivisionValues(prev => prev.map(d => d.usuario_id === id ? { ...d, valor } : d))
+  // Un campo vacío vuelve a ser automático; cualquier otro texto (incluido
+  // "0") marca a la persona como manual con ese valor.
+  function handleDivisionInputChange(id: string, valorCrudo: string) {
+    const digitos = valorCrudo.replace(/\D/g, '')
+    if (digitos === '') {
+      setManualIds(prev => {
+        if (!prev.has(id)) return prev
+        const next = new Set(prev)
+        next.delete(id)
+        return next
+      })
+      setTextos(prev => {
+        if (!(id in prev)) return prev
+        const { [id]: _omitido, ...resto } = prev
+        return resto
+      })
+      return
+    }
+    setManualIds(prev => (prev.has(id) ? prev : new Set(prev).add(id)))
+    setTextos(prev => ({ ...prev, [id]: digitos }))
   }
 
   function handleSiguiente() {
@@ -375,6 +427,8 @@ function NuevoGastoScreenInner({ cuentaFija, personal }: Props) {
     setFecha(fechaActualSantiago())
     setNota('')
     setTipoDivision('igual')
+    setManualIds(new Set())
+    setTextos({})
     setParticipantes(personas.map(p => p.id))
     setPagadoPor(usuarioId && personas.some(p => p.id === usuarioId) ? usuarioId : (personas[0]?.id ?? ''))
     setPaso(1)
@@ -917,6 +971,8 @@ function NuevoGastoScreenInner({ cuentaFija, personal }: Props) {
                       if (!persona) return null
                       const montoPreview = preview[id] ?? 0
                       const divVal = divisionValues.find(d => d.usuario_id === id)
+                      const esManual = manualIds.has(id)
+                      const valorMostrado = esManual ? (textos[id] ?? '') : (divVal?.valor ? String(divVal.valor) : '')
 
                       return (
                         <div key={id} style={{
@@ -935,10 +991,13 @@ function NuevoGastoScreenInner({ cuentaFija, personal }: Props) {
                               <input
                                 type="text" inputMode="numeric" pattern="[0-9]*"
                                 aria-label={`Monto para ${persona.nombre}`}
-                                value={divVal?.valor || ''}
-                                onChange={e => setDivisionValor(id, parseFloat(e.target.value) || 0)}
+                                value={valorMostrado}
+                                onChange={e => handleDivisionInputChange(id, e.target.value)}
                                 placeholder="0"
-                                style={{ ...inputBase, height: 38, paddingLeft: 22, paddingRight: 8, fontSize: 14, fontWeight: 600, borderRadius: 10, textAlign: 'right' }}
+                                style={{
+                                  ...inputBase, height: 38, paddingLeft: 22, paddingRight: 8, fontSize: 14, fontWeight: 600, borderRadius: 10, textAlign: 'right',
+                                  color: esManual ? 'var(--color-text-primary)' : 'var(--color-text-muted)',
+                                }}
                                 onFocus={focusInput} onBlur={blurInput}
                               />
                             </div>
@@ -948,12 +1007,15 @@ function NuevoGastoScreenInner({ cuentaFija, personal }: Props) {
                             <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 2, width: 90 }}>
                               <div style={{ position: 'relative', width: '100%' }}>
                                 <input
-                                  type="text" inputMode="decimal"
+                                  type="text" inputMode="numeric" pattern="[0-9]*"
                                   aria-label={`Porcentaje para ${persona.nombre}`}
-                                  value={divVal?.valor || ''}
-                                  onChange={e => setDivisionValor(id, parseFloat(e.target.value) || 0)}
+                                  value={valorMostrado}
+                                  onChange={e => handleDivisionInputChange(id, e.target.value)}
                                   placeholder="0"
-                                  style={{ ...inputBase, height: 38, paddingRight: 22, paddingLeft: 8, fontSize: 14, fontWeight: 600, borderRadius: 10, textAlign: 'right' }}
+                                  style={{
+                                    ...inputBase, height: 38, paddingRight: 22, paddingLeft: 8, fontSize: 14, fontWeight: 600, borderRadius: 10, textAlign: 'right',
+                                    color: esManual ? 'var(--color-text-primary)' : 'var(--color-text-muted)',
+                                  }}
                                   onFocus={focusInput} onBlur={blurInput}
                                 />
                                 <span style={{ position: 'absolute', right: 8, top: '50%', transform: 'translateY(-50%)', color: 'var(--color-text-muted)', fontSize: 13, pointerEvents: 'none' }}>%</span>

@@ -115,6 +115,15 @@ body {
   background: var(--color-divider) !important;
 }
 
+/* Valor automático de las divisiones (Exactos/Porcentajes): se muestra como
+   placeholder, nunca como texto, para que escribir no se mezcle con el
+   número calculado. --color-text-muted da ~2.6:1 de contraste sobre blanco
+   (bajo el mínimo de 3:1), por eso el placeholder usa --color-text-secondary. */
+.division-input-auto::placeholder {
+  color: var(--color-text-secondary);
+  opacity: 1;
+}
+
 /* Grid de división — 2 cols en desktop */
 .division-list {
   display: flex;

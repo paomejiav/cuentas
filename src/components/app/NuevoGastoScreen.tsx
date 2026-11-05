@@ -402,6 +402,14 @@ function NuevoGastoScreenInner({ cuentaFija, personal }: Props) {
       })
       return
     }
+    if (participantes.length === 2) {
+      // Con exactamente dos personas el total determina a la otra: nunca
+      // hay dos manuales a la vez — la última editada manda, la otra
+      // vuelve a ser el complemento automático.
+      setManualIds(new Set([id]))
+      setTextos({ [id]: digitos })
+      return
+    }
     setManualIds(prev => (prev.has(id) ? prev : new Set(prev).add(id)))
     setTextos(prev => ({ ...prev, [id]: digitos }))
   }
@@ -972,7 +980,11 @@ function NuevoGastoScreenInner({ cuentaFija, personal }: Props) {
                       const montoPreview = preview[id] ?? 0
                       const divVal = divisionValues.find(d => d.usuario_id === id)
                       const esManual = manualIds.has(id)
-                      const valorMostrado = esManual ? (textos[id] ?? '') : (divVal?.valor ? String(divVal.valor) : '')
+                      // Automático: el input va vacío y el valor calculado se
+                      // ve solo como placeholder — así nunca se mezcla con lo
+                      // que la persona escriba encima.
+                      const valorInput = esManual ? (textos[id] ?? '') : ''
+                      const placeholderAuto = String(divVal?.valor ?? 0)
 
                       return (
                         <div key={id} style={{
@@ -991,13 +1003,11 @@ function NuevoGastoScreenInner({ cuentaFija, personal }: Props) {
                               <input
                                 type="text" inputMode="numeric" pattern="[0-9]*"
                                 aria-label={`Monto para ${persona.nombre}`}
-                                value={valorMostrado}
+                                className="division-input-auto"
+                                value={valorInput}
                                 onChange={e => handleDivisionInputChange(id, e.target.value)}
-                                placeholder="0"
-                                style={{
-                                  ...inputBase, height: 38, paddingLeft: 22, paddingRight: 8, fontSize: 14, fontWeight: 600, borderRadius: 10, textAlign: 'right',
-                                  color: esManual ? 'var(--color-text-primary)' : 'var(--color-text-muted)',
-                                }}
+                                placeholder={placeholderAuto}
+                                style={{ ...inputBase, height: 38, paddingLeft: 22, paddingRight: 8, fontSize: 14, fontWeight: 600, borderRadius: 10, textAlign: 'right' }}
                                 onFocus={focusInput} onBlur={blurInput}
                               />
                             </div>
@@ -1009,13 +1019,11 @@ function NuevoGastoScreenInner({ cuentaFija, personal }: Props) {
                                 <input
                                   type="text" inputMode="numeric" pattern="[0-9]*"
                                   aria-label={`Porcentaje para ${persona.nombre}`}
-                                  value={valorMostrado}
+                                  className="division-input-auto"
+                                  value={valorInput}
                                   onChange={e => handleDivisionInputChange(id, e.target.value)}
-                                  placeholder="0"
-                                  style={{
-                                    ...inputBase, height: 38, paddingRight: 22, paddingLeft: 8, fontSize: 14, fontWeight: 600, borderRadius: 10, textAlign: 'right',
-                                    color: esManual ? 'var(--color-text-primary)' : 'var(--color-text-muted)',
-                                  }}
+                                  placeholder={placeholderAuto}
+                                  style={{ ...inputBase, height: 38, paddingRight: 22, paddingLeft: 8, fontSize: 14, fontWeight: 600, borderRadius: 10, textAlign: 'right' }}
                                   onFocus={focusInput} onBlur={blurInput}
                                 />
                                 <span style={{ position: 'absolute', right: 8, top: '50%', transform: 'translateY(-50%)', color: 'var(--color-text-muted)', fontSize: 13, pointerEvents: 'none' }}>%</span>

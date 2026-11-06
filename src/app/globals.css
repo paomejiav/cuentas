@@ -60,7 +60,7 @@ html, body {
 
 body {
   background: var(--color-bg);
-  font-family: 'DM Sans', sans-serif;
+  font-family: var(--font-dm-sans), sans-serif;
   color: var(--color-text-primary);
   /* Evita doble-tap zoom en iOS */
   touch-action: manipulation;

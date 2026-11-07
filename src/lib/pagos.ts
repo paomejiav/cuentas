@@ -1,5 +1,6 @@
 import { supabase } from '@/lib/supabase'
 import type { MetodoPago } from '@/types/database'
+import { leer } from '@/lib/errores-carga'
 
 // ── Liquidación directa: marcar divisiones puntuales como saldadas ──
 // (fuera del cierre mensual — ver RegistrarPago.tsx modo "directo")
@@ -16,6 +17,10 @@ export interface DivisionASaldar {
 /**
  * Tus divisiones sin saldar donde `contraparteId` es quien pagó el gasto —
  * acotado a una cuenta puntual (cuentaId) o a todo un grupo (grupoId).
+ *
+ * Lanza ErrorCarga si la consulta falla — antes devolvía [], indistinguible
+ * de "no le debés nada", y SaldosConPersona mostraba "Estás al día" sobre
+ * una lectura que nunca llegó.
  */
 export async function listarDivisionesPendientesConPersona(opts: {
   usuarioId: string
@@ -36,7 +41,7 @@ export async function listarDivisionesPendientesConPersona(opts: {
     query = query.eq('gastos.grupo_id', opts.grupoId)
   }
 
-  const { data } = await query
+  const data = await leer(query, 'listarDivisionesPendientesConPersona')
 
   type Fila = {
     id: string

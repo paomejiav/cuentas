@@ -6,8 +6,10 @@ import { supabase } from '@/lib/supabase'
 import { listarDivisionesPendientesConPersona, type DivisionASaldar } from '@/lib/pagos'
 import { formatearFechaCortaSantiago, type UsuarioMini } from '@/lib/cuentas'
 import { formatCLP } from '@/lib/format'
+import { leer, ErrorCarga } from '@/lib/errores-carga'
 import { Avatar } from '@/components/app/Avatar'
 import { RegistrarPago } from '@/components/app/RegistrarPago'
+import { EstadoError } from '@/components/app/EstadoError'
 
 const F_HEAD = 'var(--font-sora), sans-serif'
 const F_BODY = 'var(--font-dm-sans), sans-serif'
@@ -25,6 +27,7 @@ export function SaldosConPersona({ usuarioId, personaId, grupoId, cuentaId, volv
   const router = useRouter()
 
   const [cargando, setCargando] = useState(true)
+  const [errorCarga, setErrorCarga] = useState<ErrorCarga | null>(null)
   const [persona, setPersona] = useState<UsuarioMini | null>(null)
   const [divisiones, setDivisiones] = useState<DivisionASaldar[]>([])
   const [seleccionadas, setSeleccionadas] = useState<Set<string>>(new Set())
@@ -32,14 +35,23 @@ export function SaldosConPersona({ usuarioId, personaId, grupoId, cuentaId, volv
 
   async function cargar() {
     setCargando(true)
-    const [{ data: personaData }, lista] = await Promise.all([
-      supabase.from('usuarios').select('id, nombre, avatar_color').eq('id', personaId).single(),
-      listarDivisionesPendientesConPersona({ usuarioId, contraparteId: personaId, grupoId, cuentaId }),
-    ])
-    setPersona((personaData as UsuarioMini) ?? null)
-    setDivisiones(lista)
-    setSeleccionadas(new Set(lista.map(d => d.division_id)))
-    setCargando(false)
+    try {
+      const [personaData, lista] = await Promise.all([
+        leer(
+          supabase.from('usuarios').select('id, nombre, avatar_color').eq('id', personaId).single(),
+          'SaldosConPersona/usuarios'
+        ),
+        listarDivisionesPendientesConPersona({ usuarioId, contraparteId: personaId, grupoId, cuentaId }),
+      ])
+      setPersona((personaData as UsuarioMini) ?? null)
+      setDivisiones(lista)
+      setSeleccionadas(new Set(lista.map(d => d.division_id)))
+      setErrorCarga(null)
+    } catch (e) {
+      setErrorCarga(e instanceof ErrorCarga ? e : new ErrorCarga('inesperado', 'Algo salió mal. Inténtalo de nuevo.', e))
+    } finally {
+      setCargando(false)
+    }
   }
 
   useEffect(() => {
@@ -91,6 +103,8 @@ export function SaldosConPersona({ usuarioId, personaId, grupoId, cuentaId, volv
 
         {cargando ? (
           <p style={{ fontSize: 13.5, color: 'var(--color-text-secondary)', fontFamily: F_BODY }}>Cargando…</p>
+        ) : errorCarga ? (
+          <EstadoError mensaje={errorCarga.message} onReintentar={cargar} />
         ) : divisiones.length === 0 ? (
           <div style={{ background: 'var(--color-surface-white)', border: '1px solid var(--color-border)', borderRadius: 18, padding: '32px 20px', textAlign: 'center' }}>
             <div style={{ fontSize: 32, marginBottom: 8 }}>✅</div>
@@ -153,7 +167,7 @@ export function SaldosConPersona({ usuarioId, personaId, grupoId, cuentaId, volv
 
         <div style={{ flex: 1 }} />
 
-        {divisiones.length > 0 && (
+        {!errorCarga && divisiones.length > 0 && (
           <div style={{ paddingTop: 16 }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 10, padding: '0 2px' }}>
               <span style={{ fontSize: 13, color: 'var(--color-text-secondary)', fontFamily: F_BODY }}>Total seleccionado</span>

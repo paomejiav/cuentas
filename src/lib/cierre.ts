@@ -2,6 +2,7 @@ import { supabase } from '@/lib/supabase'
 import type { UsuarioMini } from '@/lib/cuentas'
 import { fechaActualSantiago } from '@/lib/cuentas'
 import type { DivisionASaldar } from '@/lib/pagos'
+import { leer } from '@/lib/errores-carga'
 
 // ── Tipos ─────────────────────────────────────────────────────
 
@@ -73,17 +74,29 @@ interface GastoRaw {
  * deriva de ahí tanto las transferencias Bilaterales (sin tocar su algoritmo)
  * como la cancelación de cadenas de Completa, sobre una copia — Bilateral
  * nunca ve los pools ya consumidos por el cancelado de ciclos.
+ *
+ * Lanza ErrorCarga si cualquiera de las dos consultas falla — nunca
+ * devuelve un resumen vacío/parcial. Es lo que le permite a cierre/page.tsx
+ * garantizar que el cierre automático (revisarCompletitud) solo corra sobre
+ * un resumen que se terminó de leer: no hay forma de llegar a hayPendientes
+ * sin que ambas consultas hayan salido bien primero.
  */
 export async function calcularResumenCierre(grupoId: string): Promise<ResumenCierre> {
-  const [{ data: gastosRaw }, { data: miembrosRaw }] = await Promise.all([
-    supabase
-      .from('gastos')
-      .select('id, descripcion, fecha, monto_total, pagado_por, divisiones ( id, usuario_id, monto_asignado, saldado )')
-      .eq('grupo_id', grupoId),
-    supabase
-      .from('grupo_miembros')
-      .select('usuarios ( id, nombre, avatar_color )')
-      .eq('grupo_id', grupoId),
+  const [gastosRaw, miembrosRaw] = await Promise.all([
+    leer(
+      supabase
+        .from('gastos')
+        .select('id, descripcion, fecha, monto_total, pagado_por, divisiones ( id, usuario_id, monto_asignado, saldado )')
+        .eq('grupo_id', grupoId),
+      'calcularResumenCierre/gastos'
+    ),
+    leer(
+      supabase
+        .from('grupo_miembros')
+        .select('usuarios ( id, nombre, avatar_color )')
+        .eq('grupo_id', grupoId),
+      'calcularResumenCierre/grupo_miembros'
+    ),
   ])
 
   const gastos = (gastosRaw ?? []) as unknown as GastoRaw[]

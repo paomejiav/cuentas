@@ -13,11 +13,13 @@ import {
 } from '@/lib/cierre'
 import type { UsuarioMini } from '@/lib/cuentas'
 import { formatCLP } from '@/lib/format'
+import { ErrorCarga } from '@/lib/errores-carga'
 import { Avatar } from '@/components/app/Avatar'
 import { BottomNav } from '@/components/app/BottomNav'
 import { HeaderGrupoInterno } from '@/components/app/HeaderGrupoInterno'
 import { Toast } from '@/components/app/Toast'
 import { RegistrarPago } from '@/components/app/RegistrarPago'
+import { EstadoError } from '@/components/app/EstadoError'
 
 const F_HEAD = 'var(--font-sora), sans-serif'
 const F_BODY = 'var(--font-dm-sans), sans-serif'
@@ -363,6 +365,7 @@ function CierreInner() {
 
   const [resumen, setResumen] = useState<ResumenCierre | null>(null)
   const [cargandoDatos, setCargandoDatos] = useState(true)
+  const [errorResumen, setErrorResumen] = useState<ErrorCarga | null>(null)
   const [totalInicial, setTotalInicial] = useState<number | null>(null)
   const [exito, setExito] = useState(false)
 
@@ -411,10 +414,16 @@ function CierreInner() {
   const cargarResumen = useCallback(async () => {
     if (!grupoId) return
     setCargandoDatos(true)
-    const r = await calcularResumenCierre(grupoId)
-    setResumen(r)
-    setTotalInicial(prev => (prev === null && r.hayPendientes ? r.totalPeriodo : prev))
-    setCargandoDatos(false)
+    try {
+      const r = await calcularResumenCierre(grupoId)
+      setResumen(r)
+      setErrorResumen(null)
+      setTotalInicial(prev => (prev === null && r.hayPendientes ? r.totalPeriodo : prev))
+    } catch (e) {
+      setErrorResumen(e instanceof ErrorCarga ? e : new ErrorCarga('inesperado', 'Algo salió mal. Inténtalo de nuevo.', e))
+    } finally {
+      setCargandoDatos(false)
+    }
   }, [grupoId])
 
   useEffect(() => {
@@ -437,13 +446,23 @@ function CierreInner() {
     setPagando(null)
     if (!grupoId) return
 
-    const r = await calcularResumenCierre(grupoId)
-    setResumen(r)
+    // El pago ya se guardó (RegistrarPago no llama onConfirmado si falló) —
+    // esto solo relee el resumen para decidir si queda algo pendiente. Si
+    // ESTA lectura falla, no hay forma de saber si queda algo pendiente o
+    // no: se muestra el error en vez de arriesgar un cierre automático
+    // sobre datos que no se terminaron de leer.
+    try {
+      const r = await calcularResumenCierre(grupoId)
+      setResumen(r)
+      setErrorResumen(null)
 
-    if (!r.hayPendientes) {
-      await revisarCompletitud(r)
-    } else {
-      setToast({ mensaje: 'Transferencia saldada ✓', tipo: 'exito' })
+      if (!r.hayPendientes) {
+        await revisarCompletitud(r)
+      } else {
+        setToast({ mensaje: 'Transferencia saldada ✓', tipo: 'exito' })
+      }
+    } catch (e) {
+      setErrorResumen(e instanceof ErrorCarga ? e : new ErrorCarga('inesperado', 'Algo salió mal. Inténtalo de nuevo.', e))
     }
   }
 
@@ -481,16 +500,27 @@ function CierreInner() {
       return
     }
 
-    // Recarga limpia (sin pisar nada): esas divisiones ya son saldado=true,
-    // así que `r2.completa.cadenas` va a venir vacío — el recibo de lo que
-    // se acaba de cancelar se guarda aparte, solo para esta vista.
-    const r2 = await calcularResumenCierre(grupoId)
-    setResumen(r2)
-    setCadenasRecibo(cadenasAConfirmar)
-    setTotalInicial(prev => (prev === null && r2.hayPendientes ? r2.totalPeriodo : prev))
-    setProcesandoCadenas(false)
+    // Las cancelaciones ya se escribieron (confirmarCancelacionesCadena sí
+    // revisó su propio error arriba). Esto solo relee para refrescar la
+    // vista y decidir si cerrar — si ESTA lectura falla, no se sabe si
+    // queda algo pendiente: se muestra el error y no se dispara el cierre
+    // automático sobre datos que no se terminaron de leer.
+    try {
+      // Recarga limpia (sin pisar nada): esas divisiones ya son saldado=true,
+      // así que `r2.completa.cadenas` va a venir vacío — el recibo de lo que
+      // se acaba de cancelar se guarda aparte, solo para esta vista.
+      const r2 = await calcularResumenCierre(grupoId)
+      setResumen(r2)
+      setErrorResumen(null)
+      setCadenasRecibo(cadenasAConfirmar)
+      setTotalInicial(prev => (prev === null && r2.hayPendientes ? r2.totalPeriodo : prev))
+      setProcesandoCadenas(false)
 
-    await revisarCompletitud(r2)
+      await revisarCompletitud(r2)
+    } catch (e) {
+      setProcesandoCadenas(false)
+      setErrorResumen(e instanceof ErrorCarga ? e : new ErrorCarga('inesperado', 'Algo salió mal. Inténtalo de nuevo.', e))
+    }
   }
 
   if (fase === 'cargando') {
@@ -547,7 +577,7 @@ function CierreInner() {
           Cierre de cuentas
         </div>
 
-        {!cargandoDatos && resumen && resumen.hayPendientes && !exito && (
+        {!cargandoDatos && !errorResumen && resumen && resumen.hayPendientes && !exito && (
           <>
             <ToggleModo
               modo={modo}
@@ -585,6 +615,10 @@ function CierreInner() {
             {[92, 140, 140].map((h, i) => (
               <div key={i} className="skeleton" style={{ height: h, borderRadius: 18 }} />
             ))}
+          </div>
+        ) : errorResumen ? (
+          <div style={{ marginTop: 14 }}>
+            <EstadoError mensaje={errorResumen.message} onReintentar={cargarResumen} />
           </div>
         ) : exito ? (
           <div style={{ marginTop: 14 }}><EstadoExito mes={mesActualStr()} /></div>

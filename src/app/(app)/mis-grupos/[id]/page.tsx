@@ -17,7 +17,7 @@ import { Avatar } from '@/components/app/Avatar'
 import { colorDeGrupo } from '@/lib/colores-grupo'
 import { HeaderGrupoInterno } from '@/components/app/HeaderGrupoInterno'
 import { BottomNav } from '@/components/app/BottomNav'
-import { EstadoError } from '@/components/app/EstadoError'
+import { EstadoError, EstadoErrorCompacto } from '@/components/app/EstadoError'
 
 const F_HEAD = 'var(--font-sora), sans-serif'
 const F_BODY = 'var(--font-dm-sans), sans-serif'
@@ -91,17 +91,56 @@ export default function GrupoHomePage({ params }: { params: Promise<{ id: string
 
   const [fase, setFase] = useState<'cargando' | 'ok' | 'error'>('cargando')
   const [errorCarga, setErrorCarga] = useState<ErrorCarga | null>(null)
+  const [usuarioId, setUsuarioId] = useState<string | null>(null)
   const [grupoNombre, setGrupoNombre] = useState('')
   const [resumenGrupo, setResumenGrupo] = useState<ResumenGastosGrupo>({ saldoTotal: 0, ultimaActividad: null })
+  const [resumenError, setResumenError] = useState<ErrorCarga | null>(null)
   const [saldosPersonas, setSaldosPersonas] = useState<SaldoIntegrante[]>([])
+  const [saldosError, setSaldosError] = useState<ErrorCarga | null>(null)
   const [gastoPorCuenta, setGastoPorCuenta] = useState<GastoMesPorCuenta[]>([])
+  const [porCuentaError, setPorCuentaError] = useState<ErrorCarga | null>(null)
   const [verTodoPersonas, setVerTodoPersonas] = useState(false)
+
+  // Las 3 secciones de la home (saldo total, saldos por persona, gasto por
+  // cuenta) son consultas independientes — una que falla no borra ni
+  // bloquea a las otras dos, cada una queda con su propio error y su
+  // propio Reintentar.
+  const cargarDatos = useCallback(async (uid: string) => {
+    const { desde, hasta } = limitesMesActualSantiago()
+    const [resumenR, saldosR, porCuentaR] = await Promise.allSettled([
+      obtenerResumenGastosGrupo(grupoId),
+      calcularSaldosGrupo(grupoId, uid),
+      obtenerGastoMesPorCuenta(grupoId, desde, hasta),
+    ])
+
+    if (resumenR.status === 'fulfilled') {
+      setResumenGrupo(resumenR.value)
+      setResumenError(null)
+    } else {
+      setResumenError(resumenR.reason instanceof ErrorCarga ? resumenR.reason : new ErrorCarga('inesperado', 'Algo salió mal. Inténtalo de nuevo.', resumenR.reason))
+    }
+
+    if (saldosR.status === 'fulfilled') {
+      setSaldosPersonas(saldosR.value)
+      setSaldosError(null)
+    } else {
+      setSaldosError(saldosR.reason instanceof ErrorCarga ? saldosR.reason : new ErrorCarga('inesperado', 'Algo salió mal. Inténtalo de nuevo.', saldosR.reason))
+    }
+
+    if (porCuentaR.status === 'fulfilled') {
+      setGastoPorCuenta(porCuentaR.value.filter(c => c.monto > 0))
+      setPorCuentaError(null)
+    } else {
+      setPorCuentaError(porCuentaR.reason instanceof ErrorCarga ? porCuentaR.reason : new ErrorCarga('inesperado', 'Algo salió mal. Inténtalo de nuevo.', porCuentaR.reason))
+    }
+  }, [grupoId])
 
   const cargar = useCallback(async () => {
     setFase('cargando')
     try {
       const { data: { user } } = await supabase.auth.getUser()
       if (!user) { router.replace('/login'); return }
+      setUsuarioId(user.id)
 
       // La home depende del id de la ruta, no de la cookie — valida que
       // siga siendo un grupo activo del usuario antes de mostrar nada.
@@ -114,22 +153,14 @@ export default function GrupoHomePage({ params }: { params: Promise<{ id: string
       // estamos renderizando esta pantalla con los datos correctos).
       seleccionarGrupo(grupoId, { refresh: () => {} })
 
-      const { desde, hasta } = limitesMesActualSantiago()
-      const [resumen, saldos, porCuenta] = await Promise.all([
-        obtenerResumenGastosGrupo(grupoId),
-        calcularSaldosGrupo(grupoId, user.id),
-        obtenerGastoMesPorCuenta(grupoId, desde, hasta),
-      ])
       setGrupoNombre(grupo.nombre)
-      setResumenGrupo(resumen)
-      setSaldosPersonas(saldos)
-      setGastoPorCuenta(porCuenta.filter(c => c.monto > 0))
       setFase('ok')
+      await cargarDatos(user.id)
     } catch (e) {
       setErrorCarga(e instanceof ErrorCarga ? e : new ErrorCarga('inesperado', 'Algo salió mal. Inténtalo de nuevo.', e))
       setFase('error')
     }
-  }, [router, grupoId])
+  }, [router, grupoId, cargarDatos])
 
   useEffect(() => {
     let activo = true
@@ -179,18 +210,29 @@ export default function GrupoHomePage({ params }: { params: Promise<{ id: string
 
         <Card style={{ marginTop: 6 }}>
           <div style={{ fontSize: 12.5, color: 'var(--color-neutral)', fontFamily: F_BODY }}>Saldo total del grupo</div>
-          <div style={{ display: 'flex', alignItems: 'baseline', gap: 6, marginTop: 5 }}>
-            <span style={{ fontFamily: F_HEAD, fontSize: 32, fontWeight: 800, color: 'var(--color-text-primary)', letterSpacing: '-0.02em' }}>
-              {formatCLP(resumenGrupo.saldoTotal)}
-            </span>
-            <span style={{ fontSize: 14, fontWeight: 600, color: 'var(--color-text-muted)' }}>CLP</span>
-          </div>
-          {resumenGrupo.ultimaActividad && (
-            <div style={{ fontSize: 11.5, color: 'var(--color-text-muted)', marginTop: 4, fontFamily: F_BODY }}>
-              Última act. {formatearTiempoRelativo(resumenGrupo.ultimaActividad)}
+          {resumenError ? (
+            <div style={{ marginTop: 8 }}>
+              <div style={{ fontFamily: F_HEAD, fontSize: 16, fontWeight: 700, color: 'var(--color-text-primary)', marginBottom: 8 }}>
+                No se pudo calcular
+              </div>
+              <EstadoErrorCompacto mensaje={resumenError.message} onReintentar={() => usuarioId && cargarDatos(usuarioId)} />
             </div>
+          ) : (
+            <>
+              <div style={{ display: 'flex', alignItems: 'baseline', gap: 6, marginTop: 5 }}>
+                <span style={{ fontFamily: F_HEAD, fontSize: 32, fontWeight: 800, color: 'var(--color-text-primary)', letterSpacing: '-0.02em' }}>
+                  {formatCLP(resumenGrupo.saldoTotal)}
+                </span>
+                <span style={{ fontSize: 14, fontWeight: 600, color: 'var(--color-text-muted)' }}>CLP</span>
+              </div>
+              {resumenGrupo.ultimaActividad && (
+                <div style={{ fontSize: 11.5, color: 'var(--color-text-muted)', marginTop: 4, fontFamily: F_BODY }}>
+                  Última act. {formatearTiempoRelativo(resumenGrupo.ultimaActividad)}
+                </div>
+              )}
+              {!saldosError && <BarraTeDebenDebes teDeben={teDeben} debes={debes} />}
+            </>
           )}
-          <BarraTeDebenDebes teDeben={teDeben} debes={debes} />
         </Card>
 
         <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', margin: '22px 2px 12px' }}>
@@ -208,7 +250,11 @@ export default function GrupoHomePage({ params }: { params: Promise<{ id: string
           )}
         </div>
 
-        {saldosPersonas.length === 0 ? (
+        {saldosError ? (
+          <Card>
+            <EstadoErrorCompacto mensaje={saldosError.message} onReintentar={() => usuarioId && cargarDatos(usuarioId)} />
+          </Card>
+        ) : saldosPersonas.length === 0 ? (
           <Card style={{ padding: '28px 18px', textAlign: 'center' }}>
             <p style={{ margin: 0, fontSize: 13.5, color: 'var(--color-text-secondary)', fontFamily: F_BODY }}>
               No hay más integrantes en este grupo todavía.
@@ -245,7 +291,16 @@ export default function GrupoHomePage({ params }: { params: Promise<{ id: string
           </Card>
         )}
 
-        {gastoPorCuenta.length > 0 && (
+        {porCuentaError && (
+          <Card style={{ marginTop: 20 }}>
+            <div style={{ fontSize: 13.5, fontWeight: 700, color: 'var(--color-text-primary)', fontFamily: F_BODY, marginBottom: 10 }}>
+              Gasto de {mesLabel.toLowerCase()} por cuenta
+            </div>
+            <EstadoErrorCompacto mensaje={porCuentaError.message} onReintentar={() => usuarioId && cargarDatos(usuarioId)} />
+          </Card>
+        )}
+
+        {!porCuentaError && gastoPorCuenta.length > 0 && (
           <Card style={{ marginTop: 20 }}>
             <div style={{ fontSize: 13.5, fontWeight: 700, color: 'var(--color-text-primary)', fontFamily: F_BODY }}>
               Gasto de {mesLabel.toLowerCase()} por cuenta

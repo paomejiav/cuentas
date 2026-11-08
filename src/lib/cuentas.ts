@@ -465,14 +465,20 @@ export interface GastoMesPorCuenta {
 
 /** Gasto del mes calendario actual del grupo, agrupado por cuenta (sin cuenta → "General"). */
 export async function obtenerGastoMesPorCuenta(grupoId: string, desde: string, hasta: string): Promise<GastoMesPorCuenta[]> {
-  const [{ data: gastosRaw }, { data: cuentasRaw }] = await Promise.all([
-    supabase
-      .from('gastos')
-      .select('monto_total, cuenta_id')
-      .eq('grupo_id', grupoId)
-      .gte('fecha', desde)
-      .lt('fecha', hasta),
-    supabase.from('cuentas').select('id, nombre').eq('grupo_id', grupoId),
+  const [gastosRaw, cuentasRaw] = await Promise.all([
+    leer(
+      supabase
+        .from('gastos')
+        .select('monto_total, cuenta_id')
+        .eq('grupo_id', grupoId)
+        .gte('fecha', desde)
+        .lt('fecha', hasta),
+      'obtenerGastoMesPorCuenta/gastos'
+    ),
+    leer(
+      supabase.from('cuentas').select('id, nombre').eq('grupo_id', grupoId),
+      'obtenerGastoMesPorCuenta/cuentas'
+    ),
   ])
 
   const nombrePorCuenta = new Map<string, string>()
@@ -500,11 +506,14 @@ export interface ResumenGastosGrupo {
 
 /** Suma de monto_total de TODOS los gastos del grupo (con o sin cuenta_id). */
 export async function obtenerResumenGastosGrupo(grupoId: string): Promise<ResumenGastosGrupo> {
-  const { data } = await supabase
-    .from('gastos')
-    .select('monto_total, creado_en')
-    .eq('grupo_id', grupoId)
-    .order('creado_en', { ascending: false })
+  const data = await leer(
+    supabase
+      .from('gastos')
+      .select('monto_total, creado_en')
+      .eq('grupo_id', grupoId)
+      .order('creado_en', { ascending: false }),
+    'obtenerResumenGastosGrupo'
+  )
 
   const rows = (data ?? []) as { monto_total: number; creado_en: string }[]
   const saldoTotal = rows.reduce((s, r) => s + r.monto_total, 0)

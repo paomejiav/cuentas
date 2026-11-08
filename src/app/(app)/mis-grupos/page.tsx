@@ -12,7 +12,7 @@ import { AvatarGrupo } from '@/components/app/AvatarGrupo'
 import { colorDeGrupo } from '@/lib/colores-grupo'
 import { BottomNav } from '@/components/app/BottomNav'
 import { FlujoCrearUnirseGrupo } from '@/components/app/FlujoCrearUnirseGrupo'
-import { EstadoError } from '@/components/app/EstadoError'
+import { EstadoError, EstadoErrorCompacto } from '@/components/app/EstadoError'
 
 const F_HEAD = 'var(--font-sora), sans-serif'
 const F_BODY = 'var(--font-dm-sans), sans-serif'
@@ -61,41 +61,62 @@ export default function MisGruposPage() {
 
   const [cargando, setCargando] = useState(true)
   const [errorCarga, setErrorCarga] = useState<ErrorCarga | null>(null)
+  const [usuarioId, setUsuarioId] = useState<string | null>(null)
+  // Lista base (id/nombre, de listarGruposActivos) — siempre todos los
+  // grupos reales del usuario, cargue bien o mal su saldo. "grupos" solo
+  // tiene a los que SÍ pudieron calcular su saldo; gruposConError marca a
+  // los que no, para que sigan apareciendo (con error compacto) en vez de
+  // desaparecer de la lista.
+  const [listaGruposBase, setListaGruposBase] = useState<GrupoNombre[]>([])
   const [grupos, setGrupos] = useState<GrupoConResumen[]>([])
+  const [gruposConError, setGruposConError] = useState<Set<string>>(new Set())
   const [grupoActivoId, setGrupoActivoId] = useState<string | 'todos'>('todos')
   const [flujoAbierto, setFlujoAbierto] = useState<'crear' | 'unirse' | null>(null)
+
+  const cargarSaldos = useCallback(async (uid: string, listaGrupos: GrupoNombre[]) => {
+    const resultados = await Promise.allSettled(
+      listaGrupos.map(async g => {
+        const saldos = await calcularSaldosGrupo(g.id, uid)
+        return {
+          ...g,
+          integrantes: saldos.length + 1,
+          netoUsuario: saldos.reduce((suma, s) => suma + s.neto, 0),
+        } satisfies GrupoConResumen
+      })
+    )
+
+    const ok: GrupoConResumen[] = []
+    const errores = new Set<string>()
+    resultados.forEach((r, i) => {
+      if (r.status === 'fulfilled') ok.push(r.value)
+      else errores.add(listaGrupos[i].id)
+    })
+    setGrupos(ok)
+    setGruposConError(errores)
+  }, [])
 
   const cargar = useCallback(async () => {
     setCargando(true)
     try {
       const { data: { user } } = await supabase.auth.getUser()
       if (!user) { router.replace('/login'); return }
+      setUsuarioId(user.id)
 
       const [listaGrupos, { seleccion }] = await Promise.all([
         listarGruposActivos(user.id),
         obtenerSeleccion(user.id, null),
       ])
 
-      const conResumen = await Promise.all(
-        listaGrupos.map(async g => {
-          const saldos = await calcularSaldosGrupo(g.id, user.id)
-          return {
-            ...g,
-            integrantes: saldos.length + 1,
-            netoUsuario: saldos.reduce((suma, s) => suma + s.neto, 0),
-          }
-        })
-      )
-
-      setGrupos(conResumen)
+      setListaGruposBase(listaGrupos)
       setGrupoActivoId(seleccion.tipo === 'grupo' ? seleccion.grupoId : 'todos')
       setErrorCarga(null)
+      await cargarSaldos(user.id, listaGrupos)
     } catch (e) {
       setErrorCarga(e instanceof ErrorCarga ? e : new ErrorCarga('inesperado', 'Algo salió mal. Inténtalo de nuevo.', e))
     } finally {
       setCargando(false)
     }
-  }, [router])
+  }, [router, cargarSaldos])
 
   useEffect(() => {
     let activo = true
@@ -140,13 +161,34 @@ export default function MisGruposPage() {
             Grupos
           </div>
           <div style={{ fontSize: 13, color: '#8A8F98', marginTop: 3, fontFamily: F_BODY }}>
-            Estás en {grupos.length} grupo{grupos.length === 1 ? '' : 's'}
+            Estás en {listaGruposBase.length} grupo{listaGruposBase.length === 1 ? '' : 's'}
           </div>
         </div>
 
-        {grupos.length > 0 && (
+        {listaGruposBase.length > 0 && (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-            {grupos.map(g => {
+            {listaGruposBase.map(base => {
+              if (gruposConError.has(base.id)) {
+                return (
+                  <div
+                    key={base.id}
+                    style={{
+                      background: 'var(--color-surface-white)', border: '1px solid var(--color-border)',
+                      borderRadius: 18, padding: 14, boxSizing: 'border-box',
+                    }}
+                  >
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 13, marginBottom: 10 }}>
+                      <AvatarGrupo grupoId={base.id} nombre={base.nombre} size={46} />
+                      <span style={{ fontSize: 15, fontWeight: 700, color: 'var(--color-text-primary)', fontFamily: F_BODY, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                        {base.nombre}
+                      </span>
+                    </div>
+                    <EstadoErrorCompacto onReintentar={() => usuarioId && cargarSaldos(usuarioId, listaGruposBase)} />
+                  </div>
+                )
+              }
+              const g = grupos.find(x => x.id === base.id)
+              if (!g) return null
               const activo = grupoActivoId === g.id
               const { bg, texto } = colorDeGrupo(g.id)
               return (

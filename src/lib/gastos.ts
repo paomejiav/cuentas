@@ -203,7 +203,23 @@ export async function editarGasto(
       datos.divisiones
     )
 
-    await supabase.from('divisiones').delete().eq('gasto_id', gastoId)
+    // Se leen las divisiones actuales ANTES de borrar — si el insert de
+    // las nuevas falla después de un delete exitoso, se restauran tal
+    // cual estaban (mismo id, mismo saldado/saldado_en) en vez de dejar
+    // el gasto sin ninguna división.
+    const { data: divisionesAnteriores, error: lecturaError } = await supabase
+      .from('divisiones')
+      .select('id, usuario_id, monto_asignado, saldado, saldado_en')
+      .eq('gasto_id', gastoId)
+
+    if (lecturaError) {
+      return { ok: false, error: 'No se pudieron leer las divisiones actuales. Intentá de nuevo.' }
+    }
+
+    const { error: delError } = await supabase.from('divisiones').delete().eq('gasto_id', gastoId)
+    if (delError) {
+      return { ok: false, error: 'No se pudieron actualizar las divisiones. Intentá de nuevo.' }
+    }
 
     const rows = datos.participantes.map(id => ({
       gasto_id:       gastoId,
@@ -213,7 +229,28 @@ export async function editarGasto(
     }))
 
     const { error: divError } = await supabase.from('divisiones').insert(rows)
-    if (divError) return { ok: false, error: 'No se pudieron actualizar las divisiones.' }
+    if (divError) {
+      if (divisionesAnteriores && divisionesAnteriores.length > 0) {
+        const { error: restoreError } = await supabase.from('divisiones').insert(
+          divisionesAnteriores.map(d => ({
+            id:             d.id,
+            gasto_id:       gastoId,
+            usuario_id:     d.usuario_id,
+            monto_asignado: d.monto_asignado,
+            saldado:        d.saldado,
+            saldado_en:     d.saldado_en,
+          }))
+        )
+        if (restoreError) {
+          console.error('[editarGasto] no se pudieron restaurar las divisiones anteriores tras un insert fallido', { gastoId, divError, restoreError })
+          return {
+            ok: false,
+            error: 'No se pudieron guardar los cambios, y tampoco se pudieron restaurar las divisiones anteriores. Este gasto puede haber quedado sin divisiones — avisanos o revisalo antes de seguir.',
+          }
+        }
+      }
+      return { ok: false, error: 'No se pudieron actualizar las divisiones. Se restauraron las anteriores, no se perdió nada.' }
+    }
   }
 
   return { ok: true }

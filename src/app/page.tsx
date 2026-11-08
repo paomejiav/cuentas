@@ -19,7 +19,7 @@ import { SelectorGrupoSheet } from '@/components/app/SelectorGrupoSheet'
 import { colorDeGrupo } from '@/lib/colores-grupo'
 import { BottomNav } from '@/components/app/BottomNav'
 import { FlujoCrearUnirseGrupo } from '@/components/app/FlujoCrearUnirseGrupo'
-import { EstadoError } from '@/components/app/EstadoError'
+import { EstadoError, EstadoErrorCompacto } from '@/components/app/EstadoError'
 
 const F_HEAD = 'var(--font-sora), sans-serif'
 const F_BODY = 'var(--font-dm-sans), sans-serif'
@@ -332,6 +332,7 @@ function InicioPageInner() {
 
   const [fase, setFase] = useState<Fase>('cargando')
   const [errorCarga, setErrorCarga] = useState<ErrorCarga | null>(null)
+  const [usuarioId, setUsuarioId] = useState<string | null>(null)
   const [nombreUsuario, setNombreUsuario] = useState('')
   const [avatarColor, setAvatarColor] = useState('#A8D8B9')
   const [grupos, setGrupos] = useState<GrupoParaSheet[]>([])
@@ -350,8 +351,15 @@ function InicioPageInner() {
   // ── Datos de la vista general ──
   const [cargandoTodos, setCargandoTodos] = useState(true)
   const [porGrupo, setPorGrupo] = useState<GrupoResumenInicio[]>([])
+  // ids de grupos cuyo saldo/gasto del mes falló en la última carga — esos
+  // grupos no aparecen en porGrupo (no hay un número que mostrar), pero sí
+  // tienen que seguir viéndose en "Tus grupos" con un error compacto, no
+  // desaparecer como si no existieran.
+  const [gruposConError, setGruposConError] = useState<Set<string>>(new Set())
   const [personal, setPersonal] = useState<PersonalResumen>({ neto: 0, teDeben: 0, debes: 0, gastoMes: 0 })
+  const [personalError, setPersonalError] = useState(false)
   const [hayPersonal, setHayPersonal] = useState(false)
+  const [errorDinero, setErrorDinero] = useState<ErrorCarga | null>(null)
   const [graficoTab, setGraficoTab] = useState<'saldo' | 'gasto'>('saldo')
   const [verTodoSaldo, setVerTodoSaldo] = useState(false)
   const [verTodoGasto, setVerTodoGasto] = useState(false)
@@ -360,11 +368,69 @@ function InicioPageInner() {
     setPrimerosPasosOculto(leerPrimerosPasosOculto())
   }, [])
 
+  // Saldos/gasto del mes de cada grupo + lo personal. Separado de cargar()
+  // para poder reintentarlo solo (desde el error compacto de una fila o del
+  // Saldo total) sin repetir la resolución de usuario/selección/lista de
+  // grupos. Un grupo que falla NO borra los que sí cargaron — allSettled,
+  // no all — y queda marcado en gruposConError en vez de desaparecer.
+  const cargarDinero = useCallback(async (uid: string, listaGrupos: GrupoParaSheet[]) => {
+    setCargandoTodos(true)
+
+    const resultadosPorGrupo = await Promise.allSettled(listaGrupos.map(async g => {
+      const [saldos, gastoMes] = await Promise.all([
+        calcularSaldosGrupo(g.id, uid),
+        obtenerGastoMesGrupo(g.id, desdeMes, hastaMes),
+      ])
+      const teDeben = sumarPositivos(saldos)
+      const debes = sumarNegativos(saldos)
+      return {
+        id: g.id, nombre: g.nombre, integrantes: saldos.length + 1,
+        neto: teDeben - debes, teDeben, debes, gastoMes,
+      } satisfies GrupoResumenInicio
+    }))
+
+    const porGrupoOk: GrupoResumenInicio[] = []
+    const errores = new Set<string>()
+    let primerError: ErrorCarga | null = null
+    resultadosPorGrupo.forEach((r, i) => {
+      if (r.status === 'fulfilled') {
+        porGrupoOk.push(r.value)
+      } else {
+        errores.add(listaGrupos[i].id)
+        if (!primerError) primerError = r.reason instanceof ErrorCarga ? r.reason : new ErrorCarga('inesperado', 'Algo salió mal. Inténtalo de nuevo.', r.reason)
+      }
+    })
+
+    let personalOk = true
+    let saldosPersonal: SaldoIntegrante[] = []
+    let gastoMesPersonal = 0
+    try {
+      ;[saldosPersonal, gastoMesPersonal] = await Promise.all([
+        calcularSaldosPersonal(uid),
+        obtenerGastoMesPersonal(uid, desdeMes, hastaMes),
+      ])
+    } catch (e) {
+      personalOk = false
+      if (!primerError) primerError = e instanceof ErrorCarga ? e : new ErrorCarga('inesperado', 'Algo salió mal. Inténtalo de nuevo.', e)
+    }
+
+    const personalTeDeben = sumarPositivos(saldosPersonal)
+    const personalDebes = sumarNegativos(saldosPersonal)
+    setPorGrupo(porGrupoOk)
+    setGruposConError(errores)
+    setPersonal({ neto: personalTeDeben - personalDebes, teDeben: personalTeDeben, debes: personalDebes, gastoMes: gastoMesPersonal })
+    setPersonalError(!personalOk)
+    setHayPersonal(personalOk && saldosPersonal.length > 0)
+    setErrorDinero(primerError)
+    setCargandoTodos(false)
+  }, [desdeMes, hastaMes])
+
   const cargar = useCallback(async () => {
     setFase('cargando')
     try {
       const { data: { user } } = await supabase.auth.getUser()
       if (!user) { router.replace('/login'); return }
+      setUsuarioId(user.id)
 
       const [{ data: usuario }, { grupos: listaGrupos }] = await Promise.all([
         supabase.from('usuarios').select('nombre, avatar_color').eq('id', user.id).single(),
@@ -388,38 +454,12 @@ function InicioPageInner() {
       setGrupos(conIntegrantes)
 
       setFase('todos')
-
-      setCargandoTodos(true)
-      {
-        const [resultadosPorGrupo, saldosPersonal, gastoMesPersonal] = await Promise.all([
-          Promise.all(listaGrupos.map(async g => {
-            const [saldos, gastoMes] = await Promise.all([
-              calcularSaldosGrupo(g.id, user.id),
-              obtenerGastoMesGrupo(g.id, desdeMes, hastaMes),
-            ])
-            const teDeben = sumarPositivos(saldos)
-            const debes = sumarNegativos(saldos)
-            return {
-              id: g.id, nombre: g.nombre, integrantes: saldos.length + 1,
-              neto: teDeben - debes, teDeben, debes, gastoMes,
-            } satisfies GrupoResumenInicio
-          })),
-          calcularSaldosPersonal(user.id),
-          obtenerGastoMesPersonal(user.id, desdeMes, hastaMes),
-        ])
-
-        const personalTeDeben = sumarPositivos(saldosPersonal)
-        const personalDebes = sumarNegativos(saldosPersonal)
-        setPorGrupo(resultadosPorGrupo)
-        setPersonal({ neto: personalTeDeben - personalDebes, teDeben: personalTeDeben, debes: personalDebes, gastoMes: gastoMesPersonal })
-        setHayPersonal(saldosPersonal.length > 0)
-        setCargandoTodos(false)
-      }
+      await cargarDinero(user.id, conIntegrantes)
     } catch (e) {
       setErrorCarga(e instanceof ErrorCarga ? e : new ErrorCarga('inesperado', 'Algo salió mal. Inténtalo de nuevo.', e))
       setFase('error')
     }
-  }, [router, desdeMes, hastaMes])
+  }, [router, cargarDinero])
 
   useEffect(() => {
     let activo = true
@@ -427,22 +467,26 @@ function InicioPageInner() {
     return () => { activo = false }
   }, [cargar])
 
+  // Un grupo o lo personal que falló no aporta ni un $0 ni una barra al
+  // gráfico — simplemente no aparece (en vez de aparecer con un valor
+  // falso), y el Saldo total se gatea aparte con huboErrorDinero.
   const filasSaldo = useMemo(() => {
     const filas = porGrupo.map(g => ({ id: g.id, nombre: g.nombre, valor: g.neto, esPersonal: false }))
-    filas.push({ id: 'personal', nombre: 'Personal', valor: personal.neto, esPersonal: true })
+    if (!personalError) filas.push({ id: 'personal', nombre: 'Personal', valor: personal.neto, esPersonal: true })
     return filas.sort((a, b) => Math.abs(b.valor) - Math.abs(a.valor))
-  }, [porGrupo, personal])
+  }, [porGrupo, personal, personalError])
 
   const filasGasto = useMemo(() => {
     const filas = porGrupo.filter(g => g.gastoMes > 0).map(g => ({ id: g.id, nombre: g.nombre, valor: g.gastoMes, esPersonal: false }))
-    if (personal.gastoMes > 0) filas.push({ id: 'personal', nombre: 'Personal', valor: personal.gastoMes, esPersonal: true })
+    if (!personalError && personal.gastoMes > 0) filas.push({ id: 'personal', nombre: 'Personal', valor: personal.gastoMes, esPersonal: true })
     return filas.sort((a, b) => b.valor - a.valor)
-  }, [porGrupo, personal])
+  }, [porGrupo, personal, personalError])
 
   const maxAbsSaldo = Math.max(1, ...filasSaldo.map(f => Math.abs(f.valor)))
   const maxGasto = Math.max(1, ...filasGasto.map(f => f.valor))
   const totalGastoMes = filasGasto.reduce((s, f) => s + f.valor, 0)
 
+  const huboErrorDinero = gruposConError.size > 0 || personalError
   const teDebenTotal = porGrupo.reduce((s, g) => s + g.teDeben, 0) + personal.teDeben
   const debesTotal = porGrupo.reduce((s, g) => s + g.debes, 0) + personal.debes
   const saldoTotal = teDebenTotal - debesTotal
@@ -451,6 +495,18 @@ function InicioPageInner() {
     () => filasSaldo.filter(f => !f.esPersonal).map(f => porGrupo.find(g => g.id === f.id)!).filter(Boolean),
     [filasSaldo, porGrupo]
   )
+
+  // "Tus grupos" (la tarjeta, no el gráfico): los que cargaron bien,
+  // ordenados por magnitud, más los que fallaron al final — nunca
+  // desaparecen, muestran un error compacto en su fila en vez de un
+  // monto o "Al día". Solo id/nombre acá: el resto de los datos del grupo
+  // (neto, integrantes) se busca en porGrupo al renderizar cada fila, ya
+  // que un grupo fallido no tiene esos valores.
+  const gruposParaTarjeta = useMemo(() => {
+    const ok = gruposOrdenGrafico.map(g => ({ id: g.id, nombre: g.nombre }))
+    const fallidos = grupos.filter(g => gruposConError.has(g.id)).map(g => ({ id: g.id, nombre: g.nombre }))
+    return [...ok, ...fallidos]
+  }, [gruposOrdenGrafico, grupos, gruposConError])
 
   function handleOcultarPrimerosPasos() {
     guardarPrimerosPasosOculto()
@@ -544,15 +600,29 @@ function InicioPageInner() {
             <>
               <Card style={{ marginTop: 6 }}>
                 <div style={{ fontSize: 12.5, color: 'var(--color-neutral)', fontFamily: F_BODY }}>Saldo total</div>
-                <div style={{ display: 'flex', alignItems: 'baseline', gap: 6, marginTop: 5 }}>
-                  <span style={{ fontFamily: F_HEAD, fontSize: 30, fontWeight: 800, letterSpacing: '-0.02em', color: 'var(--color-text-primary)' }}>
-                    {formatCLP(Math.abs(saldoTotal))}
-                  </span>
-                </div>
-                <div style={{ fontSize: 12, color: 'var(--color-text-muted)', marginTop: 3, fontFamily: F_BODY }}>
-                  Suma tus {grupos.length} grupo{grupos.length === 1 ? '' : 's'}{hayPersonal ? ' y tus gastos personales' : ''}.
-                </div>
-                <BarraTeDebenDebes teDeben={teDebenTotal} debes={debesTotal} />
+                {huboErrorDinero ? (
+                  <div style={{ marginTop: 8 }}>
+                    <div style={{ fontFamily: F_HEAD, fontSize: 16, fontWeight: 700, color: 'var(--color-text-primary)', marginBottom: 8 }}>
+                      No se pudo calcular
+                    </div>
+                    <EstadoErrorCompacto
+                      mensaje={errorDinero?.message}
+                      onReintentar={() => usuarioId && cargarDinero(usuarioId, grupos)}
+                    />
+                  </div>
+                ) : (
+                  <>
+                    <div style={{ display: 'flex', alignItems: 'baseline', gap: 6, marginTop: 5 }}>
+                      <span style={{ fontFamily: F_HEAD, fontSize: 30, fontWeight: 800, letterSpacing: '-0.02em', color: 'var(--color-text-primary)' }}>
+                        {formatCLP(Math.abs(saldoTotal))}
+                      </span>
+                    </div>
+                    <div style={{ fontSize: 12, color: 'var(--color-text-muted)', marginTop: 3, fontFamily: F_BODY }}>
+                      Suma tus {grupos.length} grupo{grupos.length === 1 ? '' : 's'}{hayPersonal ? ' y tus gastos personales' : ''}.
+                    </div>
+                    <BarraTeDebenDebes teDeben={teDebenTotal} debes={debesTotal} />
+                  </>
+                )}
               </Card>
 
               <Card style={{ marginTop: 14 }}>
@@ -596,7 +666,29 @@ function InicioPageInner() {
               </div>
 
               <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-                {gruposOrdenGrafico.slice(0, 3).map(g => (
+                {gruposParaTarjeta.slice(0, 3).map(fila => {
+                  if (gruposConError.has(fila.id)) {
+                    return (
+                      <div
+                        key={fila.id}
+                        style={{
+                          background: 'var(--color-surface-white)', border: '1px solid var(--color-border)',
+                          borderRadius: 18, padding: 16, boxSizing: 'border-box',
+                        }}
+                      >
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 13, marginBottom: 10 }}>
+                          <AvatarGrupo grupoId={fila.id} nombre={fila.nombre} size={44} />
+                          <div style={{ fontSize: 15, fontWeight: 700, color: 'var(--color-text-primary)', fontFamily: F_BODY, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                            {fila.nombre}
+                          </div>
+                        </div>
+                        <EstadoErrorCompacto onReintentar={() => usuarioId && cargarDinero(usuarioId, grupos)} />
+                      </div>
+                    )
+                  }
+                  const g = porGrupo.find(p => p.id === fila.id)
+                  if (!g) return null
+                  return (
                   <button
                     key={g.id}
                     type="button"
@@ -633,7 +725,8 @@ function InicioPageInner() {
                       <path d="M1.5 1.5L6.5 7l-5 5.5" stroke="#C4C7CE" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
                     </svg>
                   </button>
-                ))}
+                  )
+                })}
               </div>
 
               <div style={{ display: 'flex', flexDirection: 'column', gap: 12, marginTop: 20 }}>

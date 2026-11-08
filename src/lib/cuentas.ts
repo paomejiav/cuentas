@@ -1,4 +1,5 @@
 import { supabase } from '@/lib/supabase'
+import { leer } from '@/lib/errores-carga'
 
 export type TipoCuenta = 'hogar' | 'viaje' | 'evento'
 
@@ -285,15 +286,21 @@ export async function calcularSaldosGrupo(
   grupoId: string,
   usuarioId: string
 ): Promise<SaldoIntegrante[]> {
-  const [{ data: miembrosRaw }, { data: gastosRaw }] = await Promise.all([
-    supabase
-      .from('grupo_miembros')
-      .select('usuarios ( id, nombre, avatar_color )')
-      .eq('grupo_id', grupoId),
-    supabase
-      .from('gastos')
-      .select('id, pagado_por, divisiones ( usuario_id, monto_asignado, saldado )')
-      .eq('grupo_id', grupoId),
+  const [miembrosRaw, gastosRaw] = await Promise.all([
+    leer(
+      supabase
+        .from('grupo_miembros')
+        .select('usuarios ( id, nombre, avatar_color )')
+        .eq('grupo_id', grupoId),
+      'calcularSaldosGrupo/grupo_miembros'
+    ),
+    leer(
+      supabase
+        .from('gastos')
+        .select('id, pagado_por, divisiones ( usuario_id, monto_asignado, saldado )')
+        .eq('grupo_id', grupoId),
+      'calcularSaldosGrupo/gastos'
+    ),
   ])
 
   const integrantes = ((miembrosRaw ?? []) as unknown as { usuarios: UsuarioMini | null }[])
@@ -312,10 +319,13 @@ export async function calcularSaldosGrupo(
  * así que no hace falta filtrar participación acá.
  */
 export async function calcularSaldosPersonal(usuarioId: string): Promise<SaldoIntegrante[]> {
-  const { data } = await supabase
-    .from('gastos')
-    .select('id, pagado_por, divisiones ( usuario_id, monto_asignado, saldado )')
-    .is('grupo_id', null)
+  const data = await leer(
+    supabase
+      .from('gastos')
+      .select('id, pagado_por, divisiones ( usuario_id, monto_asignado, saldado )')
+      .is('grupo_id', null),
+    'calcularSaldosPersonal'
+  )
 
   const gastos = (data ?? []) as unknown as GastoConDivisiones[]
 
@@ -419,24 +429,30 @@ export function etiquetaHoyAyerSantiago(fecha: string): 'Hoy' | 'Ayer' | null {
 
 /** Total de gastos del grupo en el mes calendario actual (no la parte del usuario). */
 export async function obtenerGastoMesGrupo(grupoId: string, desde: string, hasta: string): Promise<number> {
-  const { data } = await supabase
-    .from('gastos')
-    .select('monto_total')
-    .eq('grupo_id', grupoId)
-    .gte('fecha', desde)
-    .lt('fecha', hasta)
+  const data = await leer(
+    supabase
+      .from('gastos')
+      .select('monto_total')
+      .eq('grupo_id', grupoId)
+      .gte('fecha', desde)
+      .lt('fecha', hasta),
+    'obtenerGastoMesGrupo'
+  )
 
   return ((data ?? []) as { monto_total: number }[]).reduce((s, g) => s + Number(g.monto_total), 0)
 }
 
 /** Total de gastos aislados (sin grupo) del usuario en el mes calendario actual. */
 export async function obtenerGastoMesPersonal(usuarioId: string, desde: string, hasta: string): Promise<number> {
-  const { data } = await supabase
-    .from('gastos')
-    .select('monto_total')
-    .is('grupo_id', null)
-    .gte('fecha', desde)
-    .lt('fecha', hasta)
+  const data = await leer(
+    supabase
+      .from('gastos')
+      .select('monto_total')
+      .is('grupo_id', null)
+      .gte('fecha', desde)
+      .lt('fecha', hasta),
+    'obtenerGastoMesPersonal'
+  )
 
   return ((data ?? []) as { monto_total: number }[]).reduce((s, g) => s + Number(g.monto_total), 0)
 }

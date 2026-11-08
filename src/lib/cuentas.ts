@@ -1,5 +1,5 @@
 import { supabase } from '@/lib/supabase'
-import { leer } from '@/lib/errores-carga'
+import { leer, leerUno } from '@/lib/errores-carga'
 
 export type TipoCuenta = 'hogar' | 'viaje' | 'evento'
 
@@ -50,12 +50,15 @@ export async function listarCuentasConResumen(
   grupoId: string,
   usuarioId: string
 ): Promise<{ cuentas: CuentaResumen[]; resumen: ResumenGrupo }> {
-  const { data: cuentasRaw } = await supabase
-    .from('cuentas')
-    .select('id, nombre, tipo, icono')
-    .eq('grupo_id', grupoId)
-    .eq('estado', 'activa')
-    .order('creado_en', { ascending: false })
+  const cuentasRaw = await leer(
+    supabase
+      .from('cuentas')
+      .select('id, nombre, tipo, icono')
+      .eq('grupo_id', grupoId)
+      .eq('estado', 'activa')
+      .order('creado_en', { ascending: false }),
+    'listarCuentasConResumen/cuentas'
+  )
 
   const cuentas = (cuentasRaw ?? []) as { id: string; nombre: string; tipo: TipoCuenta; icono: string | null }[]
   if (cuentas.length === 0) {
@@ -64,20 +67,29 @@ export async function listarCuentasConResumen(
 
   const cuentaIds = cuentas.map(c => c.id)
 
-  const [{ data: miembrosRaw }, { data: gastosRaw }, { data: divisionesRaw }] = await Promise.all([
-    supabase
-      .from('cuenta_miembros')
-      .select('cuenta_id, usuarios ( id, nombre, avatar_color )')
-      .in('cuenta_id', cuentaIds),
-    supabase
-      .from('gastos')
-      .select('id, cuenta_id, monto_total')
-      .in('cuenta_id', cuentaIds),
-    supabase
-      .from('divisiones')
-      .select('monto_asignado, saldado, gastos!inner ( cuenta_id )')
-      .eq('usuario_id', usuarioId)
-      .in('gastos.cuenta_id', cuentaIds),
+  const [miembrosRaw, gastosRaw, divisionesRaw] = await Promise.all([
+    leer(
+      supabase
+        .from('cuenta_miembros')
+        .select('cuenta_id, usuarios ( id, nombre, avatar_color )')
+        .in('cuenta_id', cuentaIds),
+      'listarCuentasConResumen/cuenta_miembros'
+    ),
+    leer(
+      supabase
+        .from('gastos')
+        .select('id, cuenta_id, monto_total')
+        .in('cuenta_id', cuentaIds),
+      'listarCuentasConResumen/gastos'
+    ),
+    leer(
+      supabase
+        .from('divisiones')
+        .select('monto_asignado, saldado, gastos!inner ( cuenta_id )')
+        .eq('usuario_id', usuarioId)
+        .in('gastos.cuenta_id', cuentaIds),
+      'listarCuentasConResumen/divisiones'
+    ),
   ])
 
   const miembrosPorCuenta = new Map<string, UsuarioMini[]>()
@@ -146,19 +158,25 @@ export interface MiembroCuenta extends UsuarioMini {
 }
 
 export async function obtenerCuenta(cuentaId: string): Promise<CuentaDetalle | null> {
-  const { data } = await supabase
-    .from('cuentas')
-    .select('id, grupo_id, nombre, tipo, icono, estado')
-    .eq('id', cuentaId)
-    .single()
+  const data = await leerUno(
+    supabase
+      .from('cuentas')
+      .select('id, grupo_id, nombre, tipo, icono, estado')
+      .eq('id', cuentaId)
+      .single(),
+    'obtenerCuenta'
+  )
   return data as CuentaDetalle | null
 }
 
 export async function obtenerMiembrosCuenta(cuentaId: string): Promise<MiembroCuenta[]> {
-  const { data } = await supabase
-    .from('cuenta_miembros')
-    .select('rol, usuarios ( id, nombre, avatar_color )')
-    .eq('cuenta_id', cuentaId)
+  const data = await leer(
+    supabase
+      .from('cuenta_miembros')
+      .select('rol, usuarios ( id, nombre, avatar_color )')
+      .eq('cuenta_id', cuentaId),
+    'obtenerMiembrosCuenta'
+  )
 
   return ((data ?? []) as unknown as { rol: 'admin' | 'miembro'; usuarios: UsuarioMini | null }[])
     .filter(f => f.usuarios)
@@ -172,13 +190,19 @@ export interface SaldoCuenta {
 }
 
 export async function calcularSaldoCuenta(cuentaId: string, usuarioId: string): Promise<SaldoCuenta> {
-  const [{ data: gastos }, { data: divisiones }] = await Promise.all([
-    supabase.from('gastos').select('monto_total').eq('cuenta_id', cuentaId),
-    supabase
-      .from('divisiones')
-      .select('monto_asignado, saldado, gastos!inner ( cuenta_id )')
-      .eq('usuario_id', usuarioId)
-      .eq('gastos.cuenta_id', cuentaId),
+  const [gastos, divisiones] = await Promise.all([
+    leer(
+      supabase.from('gastos').select('monto_total').eq('cuenta_id', cuentaId),
+      'calcularSaldoCuenta/gastos'
+    ),
+    leer(
+      supabase
+        .from('divisiones')
+        .select('monto_asignado, saldado, gastos!inner ( cuenta_id )')
+        .eq('usuario_id', usuarioId)
+        .eq('gastos.cuenta_id', cuentaId),
+      'calcularSaldoCuenta/divisiones'
+    ),
   ])
 
   const gastoTotal = (gastos ?? []).reduce((acc, g) => acc + (g as { monto_total: number }).monto_total, 0)
@@ -203,12 +227,15 @@ export interface GastoDeCuenta {
 }
 
 export async function listarGastosCuenta(cuentaId: string): Promise<GastoDeCuenta[]> {
-  const { data } = await supabase
-    .from('gastos')
-    .select('id, descripcion, monto_total, categoria, fecha, usuarios!gastos_pagado_por_fkey ( id, nombre, avatar_color )')
-    .eq('cuenta_id', cuentaId)
-    .order('fecha', { ascending: false })
-    .order('creado_en', { ascending: false })
+  const data = await leer(
+    supabase
+      .from('gastos')
+      .select('id, descripcion, monto_total, categoria, fecha, usuarios!gastos_pagado_por_fkey ( id, nombre, avatar_color )')
+      .eq('cuenta_id', cuentaId)
+      .order('fecha', { ascending: false })
+      .order('creado_en', { ascending: false }),
+    'listarGastosCuenta'
+  )
 
   return ((data ?? []) as unknown as (Omit<GastoDeCuenta, 'pagador'> & { usuarios: UsuarioMini | null })[])
     .map(g => ({ ...g, pagador: g.usuarios }))
@@ -268,10 +295,13 @@ export async function calcularSaldosCuenta(
   usuarioId: string,
   integrantes: MiembroCuenta[]
 ): Promise<SaldoIntegrante[]> {
-  const { data } = await supabase
-    .from('gastos')
-    .select('id, pagado_por, divisiones ( usuario_id, monto_asignado, saldado )')
-    .eq('cuenta_id', cuentaId)
+  const data = await leer(
+    supabase
+      .from('gastos')
+      .select('id, pagado_por, divisiones ( usuario_id, monto_asignado, saldado )')
+      .eq('cuenta_id', cuentaId),
+    'calcularSaldosCuenta'
+  )
 
   const gastos = (data ?? []) as unknown as GastoConDivisiones[]
   return calcularSaldosDesdeGastos(gastos, usuarioId, integrantes)

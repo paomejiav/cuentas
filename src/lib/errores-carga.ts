@@ -72,3 +72,26 @@ export async function leer<T>(
   }
   return data
 }
+
+/**
+ * Como leer(), pero para un `.single()` donde "no existe esa fila" es un
+ * resultado legítimo (ej. obtenerCuenta con un id que no existe o al que
+ * RLS no te da acceso) — no documentado en vivo, pero sí en la
+ * documentación pública de PostgREST: con 0 filas, `.single()` responde
+ * con el código 'PGRST116' ("JSON object requested, multiple (or no) rows
+ * returned"). Ese caso puntual devuelve null en vez de lanzar; cualquier
+ * otro error (red, sesión, 500, etc.) lanza igual que leer().
+ */
+export async function leerUno<T>(
+  promesa: PromiseLike<PostgrestSingleResponse<T>>,
+  contexto: string
+): Promise<T | null> {
+  const { data, error, status } = await promesa
+  if (error) {
+    if (error.code === 'PGRST116') return null
+    const tipo = clasificarError(status, error)
+    if (tipo === 'inesperado') console.error(`[${contexto}]`, error)
+    throw new ErrorCarga(tipo, mensajeErrorCarga(tipo), error)
+  }
+  return data
+}

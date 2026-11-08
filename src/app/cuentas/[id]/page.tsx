@@ -13,8 +13,10 @@ import { CATEGORIA_EMOJI } from '@/types/database'
 import type { Categoria } from '@/types/database'
 import { formatCLP } from '@/lib/format'
 import { compartirOCopiar } from '@/lib/compartir'
+import { ErrorCarga } from '@/lib/errores-carga'
 import { Avatar } from '@/components/app/Avatar'
 import { DetalleGasto } from '@/components/app/DetalleGasto'
+import { EstadoError, EstadoErrorCompacto } from '@/components/app/EstadoError'
 
 const F_HEAD = 'var(--font-sora), sans-serif'
 const F_BODY = 'var(--font-dm-sans), sans-serif'
@@ -25,13 +27,18 @@ export default function DetalleCuentaPage({ params }: { params: Promise<{ id: st
   const { id } = use(params)
   const router = useRouter()
 
-  const [estado, setEstado] = useState<'cargando' | 'ok' | 'no-encontrada'>('cargando')
+  const [estado, setEstado] = useState<'cargando' | 'ok' | 'no-encontrada' | 'error'>('cargando')
+  const [errorCarga, setErrorCarga] = useState<ErrorCarga | null>(null)
   const [usuarioId, setUsuarioId] = useState<string | null>(null)
   const [cuenta, setCuenta] = useState<CuentaDetalle | null>(null)
   const [miembros, setMiembros] = useState<MiembroCuenta[]>([])
+  const [miembrosError, setMiembrosError] = useState<ErrorCarga | null>(null)
   const [saldo, setSaldo] = useState<SaldoCuenta>({ gastoTotal: 0, tuParte: 0, tuSaldo: 0 })
+  const [saldoError, setSaldoError] = useState<ErrorCarga | null>(null)
   const [gastos, setGastos] = useState<GastoDeCuenta[]>([])
+  const [gastosError, setGastosError] = useState<ErrorCarga | null>(null)
   const [saldosIntegrantes, setSaldosIntegrantes] = useState<SaldoIntegrante[]>([])
+  const [saldosIntegrantesError, setSaldosIntegrantesError] = useState<ErrorCarga | null>(null)
   const [tab, setTab] = useState<Tab>('gastos')
 
   const [mostrarAgregar, setMostrarAgregar] = useState(false)
@@ -42,23 +49,61 @@ export default function DetalleCuentaPage({ params }: { params: Promise<{ id: st
   const [gastoAbierto, setGastoAbierto] = useState<string | null>(null)
   const [enlaceCopiado, setEnlaceCopiado] = useState(false)
 
-  async function cargarTodo(cuentaId: string, uid: string) {
-    const c = await obtenerCuenta(cuentaId)
-    if (!c) { setEstado('no-encontrada'); return }
-
-    const [miembrosCuenta, saldoCuenta, gastosCuenta] = await Promise.all([
+  // Las 4 secciones de la pantalla (saldo, miembros, gastos, saldos por
+  // integrante) son consultas independientes — una que falla no bloquea ni
+  // borra a las demás. saldosIntegrantes sí depende de que miembros haya
+  // cargado (necesita la lista para calcular), así que si miembros falla,
+  // saldosIntegrantes también queda marcada con error, sin intentar la
+  // consulta (no tiene con qué).
+  async function cargarSecciones(cuentaId: string, uid: string) {
+    const [miembrosR, saldoR, gastosR] = await Promise.allSettled([
       obtenerMiembrosCuenta(cuentaId),
       calcularSaldoCuenta(cuentaId, uid),
       listarGastosCuenta(cuentaId),
     ])
-    const saldosPorIntegrante = await calcularSaldosCuenta(cuentaId, uid, miembrosCuenta)
 
-    setCuenta(c)
-    setMiembros(miembrosCuenta)
-    setSaldo(saldoCuenta)
-    setGastos(gastosCuenta)
-    setSaldosIntegrantes(saldosPorIntegrante)
-    setEstado('ok')
+    if (miembrosR.status === 'fulfilled') {
+      setMiembros(miembrosR.value)
+      setMiembrosError(null)
+      try {
+        const saldosPorIntegrante = await calcularSaldosCuenta(cuentaId, uid, miembrosR.value)
+        setSaldosIntegrantes(saldosPorIntegrante)
+        setSaldosIntegrantesError(null)
+      } catch (e) {
+        setSaldosIntegrantesError(e instanceof ErrorCarga ? e : new ErrorCarga('inesperado', 'Algo salió mal. Inténtalo de nuevo.', e))
+      }
+    } else {
+      const err = miembrosR.reason instanceof ErrorCarga ? miembrosR.reason : new ErrorCarga('inesperado', 'Algo salió mal. Inténtalo de nuevo.', miembrosR.reason)
+      setMiembrosError(err)
+      setSaldosIntegrantesError(err)
+    }
+
+    if (saldoR.status === 'fulfilled') {
+      setSaldo(saldoR.value)
+      setSaldoError(null)
+    } else {
+      setSaldoError(saldoR.reason instanceof ErrorCarga ? saldoR.reason : new ErrorCarga('inesperado', 'Algo salió mal. Inténtalo de nuevo.', saldoR.reason))
+    }
+
+    if (gastosR.status === 'fulfilled') {
+      setGastos(gastosR.value)
+      setGastosError(null)
+    } else {
+      setGastosError(gastosR.reason instanceof ErrorCarga ? gastosR.reason : new ErrorCarga('inesperado', 'Algo salió mal. Inténtalo de nuevo.', gastosR.reason))
+    }
+  }
+
+  async function cargarTodo(cuentaId: string, uid: string) {
+    try {
+      const c = await obtenerCuenta(cuentaId)
+      if (!c) { setEstado('no-encontrada'); return }
+      setCuenta(c)
+      setEstado('ok')
+      await cargarSecciones(cuentaId, uid)
+    } catch (e) {
+      setErrorCarga(e instanceof ErrorCarga ? e : new ErrorCarga('inesperado', 'Algo salió mal. Inténtalo de nuevo.', e))
+      setEstado('error')
+    }
   }
 
   useEffect(() => {
@@ -127,6 +172,19 @@ export default function DetalleCuentaPage({ params }: { params: Promise<{ id: st
     )
   }
 
+  if (estado === 'error') {
+    return (
+      <main style={{ minHeight: '100dvh', background: 'var(--color-bg)' }}>
+        <div style={{ maxWidth: 440, margin: '0 auto', padding: '0 18px', paddingTop: 'max(20px, env(safe-area-inset-top, 0px))' }}>
+          <EstadoError
+            mensaje={errorCarga?.message ?? 'Algo salió mal. Inténtalo de nuevo.'}
+            onReintentar={() => usuarioId && cargarTodo(id, usuarioId)}
+          />
+        </div>
+      </main>
+    )
+  }
+
   if (estado === 'no-encontrada' || !cuenta) {
     return (
       <main style={{ minHeight: '100dvh', background: 'var(--color-bg)', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: 24, textAlign: 'center' }}>
@@ -177,24 +235,40 @@ export default function DetalleCuentaPage({ params }: { params: Promise<{ id: st
           boxShadow: 'var(--shadow-cta)',
         }}>
           <div style={{ fontSize: 12.5, color: 'rgba(255,255,255,.8)', fontFamily: F_BODY }}>Tu saldo en esta cuenta</div>
-          <div style={{ fontFamily: F_HEAD, fontSize: 28, fontWeight: 800, letterSpacing: '-0.02em', marginTop: 4 }}>
-            {alDia ? formatCLP(0) : `−${formatCLP(Math.abs(saldo.tuSaldo))}`}
-          </div>
-          <div style={{ fontSize: 12.5, color: 'rgba(255,255,255,.85)', marginTop: 3, fontFamily: F_BODY }}>
-            {alDia ? 'Estás al día' : 'Le debés al grupo'}
-          </div>
-          <div style={{ display: 'flex', gap: 10, marginTop: 16 }}>
-            <div style={{ flex: 1, background: 'rgba(255,255,255,.16)', borderRadius: 12, padding: '10px 12px' }}>
-              <div style={{ fontSize: 11, color: 'rgba(255,255,255,.8)', fontFamily: F_BODY }}>Gasto total</div>
-              <div style={{ fontFamily: F_HEAD, fontSize: 16, fontWeight: 700, marginTop: 2 }}>{formatCLP(saldo.gastoTotal)}</div>
+          {saldoError ? (
+            <div style={{ marginTop: 10 }}>
+              <div style={{ fontFamily: F_HEAD, fontSize: 15, fontWeight: 700, marginBottom: 8 }}>No se pudo calcular</div>
+              <EstadoErrorCompacto mensaje={saldoError.message} onReintentar={() => usuarioId && cargarSecciones(id, usuarioId)} />
             </div>
-            <div style={{ flex: 1, background: 'rgba(255,255,255,.16)', borderRadius: 12, padding: '10px 12px' }}>
-              <div style={{ fontSize: 11, color: 'rgba(255,255,255,.8)', fontFamily: F_BODY }}>Tu parte</div>
-              <div style={{ fontFamily: F_HEAD, fontSize: 16, fontWeight: 700, marginTop: 2 }}>{formatCLP(saldo.tuParte)}</div>
-            </div>
-          </div>
+          ) : (
+            <>
+              <div style={{ fontFamily: F_HEAD, fontSize: 28, fontWeight: 800, letterSpacing: '-0.02em', marginTop: 4 }}>
+                {alDia ? formatCLP(0) : `−${formatCLP(Math.abs(saldo.tuSaldo))}`}
+              </div>
+              <div style={{ fontSize: 12.5, color: 'rgba(255,255,255,.85)', marginTop: 3, fontFamily: F_BODY }}>
+                {alDia ? 'Estás al día' : 'Le debés al grupo'}
+              </div>
+              <div style={{ display: 'flex', gap: 10, marginTop: 16 }}>
+                <div style={{ flex: 1, background: 'rgba(255,255,255,.16)', borderRadius: 12, padding: '10px 12px' }}>
+                  <div style={{ fontSize: 11, color: 'rgba(255,255,255,.8)', fontFamily: F_BODY }}>Gasto total</div>
+                  <div style={{ fontFamily: F_HEAD, fontSize: 16, fontWeight: 700, marginTop: 2 }}>{formatCLP(saldo.gastoTotal)}</div>
+                </div>
+                <div style={{ flex: 1, background: 'rgba(255,255,255,.16)', borderRadius: 12, padding: '10px 12px' }}>
+                  <div style={{ fontSize: 11, color: 'rgba(255,255,255,.8)', fontFamily: F_BODY }}>Tu parte</div>
+                  <div style={{ fontFamily: F_HEAD, fontSize: 16, fontWeight: 700, marginTop: 2 }}>{formatCLP(saldo.tuParte)}</div>
+                </div>
+              </div>
+            </>
+          )}
         </div>
 
+        {miembrosError && (
+          <div style={{ margin: '18px 2px 12px' }}>
+            <EstadoErrorCompacto mensaje={miembrosError.message} onReintentar={() => usuarioId && cargarSecciones(id, usuarioId)} />
+          </div>
+        )}
+
+        {!miembrosError && (
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, margin: '18px 2px 12px' }}>
           <div style={{ display: 'flex' }}>
             {miembros.slice(0, 4).map((m, idx) => (
@@ -220,6 +294,7 @@ export default function DetalleCuentaPage({ params }: { params: Promise<{ id: st
             </button>
           )}
         </div>
+        )}
 
         <button
           type="button"
@@ -331,7 +406,11 @@ export default function DetalleCuentaPage({ params }: { params: Promise<{ id: st
         </div>
 
         {tab === 'gastos' && (
-          gastos.length === 0 ? (
+          gastosError ? (
+            <div style={{ background: 'var(--color-surface-white)', border: '1px solid var(--color-border)', borderRadius: 18, padding: '18px' }}>
+              <EstadoErrorCompacto mensaje={gastosError.message} onReintentar={() => usuarioId && cargarSecciones(id, usuarioId)} />
+            </div>
+          ) : gastos.length === 0 ? (
             <div style={{ background: 'var(--color-surface-white)', border: '1px solid var(--color-border)', borderRadius: 18, padding: '28px 18px', textAlign: 'center' }}>
               <div style={{ fontSize: 28, marginBottom: 6 }}>🧾</div>
               <p style={{ margin: 0, fontSize: 13.5, color: 'var(--color-text-secondary)', fontFamily: F_BODY }}>Todavía no hay gastos en esta cuenta.</p>
@@ -369,7 +448,11 @@ export default function DetalleCuentaPage({ params }: { params: Promise<{ id: st
         )}
 
         {tab === 'saldos' && (
-          saldosIntegrantes.length === 0 ? (
+          saldosIntegrantesError ? (
+            <div style={{ background: 'var(--color-surface-white)', border: '1px solid var(--color-border)', borderRadius: 18, padding: '18px' }}>
+              <EstadoErrorCompacto mensaje={saldosIntegrantesError.message} onReintentar={() => usuarioId && cargarSecciones(id, usuarioId)} />
+            </div>
+          ) : saldosIntegrantes.length === 0 ? (
             <div style={{ background: 'var(--color-surface-white)', border: '1px solid var(--color-border)', borderRadius: 18, padding: '28px 18px', textAlign: 'center' }}>
               <p style={{ margin: 0, fontSize: 13.5, color: 'var(--color-text-secondary)', fontFamily: F_BODY }}>No hay otros integrantes en esta cuenta.</p>
             </div>

@@ -7,7 +7,7 @@ import { listarGruposActivos, reiniciarCuenta, type GrupoNombre } from '@/lib/gr
 import { ErrorCarga } from '@/lib/errores-carga'
 import { Avatar } from '@/components/app/Avatar'
 import { BottomNav } from '@/components/app/BottomNav'
-import { EstadoError } from '@/components/app/EstadoError'
+import { EstadoError, EstadoErrorCompacto } from '@/components/app/EstadoError'
 
 const F_HEAD = 'var(--font-sora), sans-serif'
 const F_BODY = 'var(--font-dm-sans), sans-serif'
@@ -42,6 +42,7 @@ export default function PerfilPage() {
   const router = useRouter()
 
   const [cargando, setCargando] = useState(true)
+  const [usuarioId, setUsuarioId] = useState<string | null>(null)
   const [nombre, setNombre] = useState('')
   const [email, setEmail] = useState('')
   const [avatarColor, setAvatarColor] = useState('#A8D8B9')
@@ -54,11 +55,21 @@ export default function PerfilPage() {
   const [cerrandoSesion, setCerrandoSesion] = useState(false)
   const [errorCarga, setErrorCarga] = useState<ErrorCarga | null>(null)
 
+  // Grupos específicos del modal: se piden de nuevo (no se reusa el
+  // "grupos" de la carga de la página) justo al abrir el modal, para no
+  // mostrar "vas a salir de tus 0 grupos" ni habilitar la confirmación de
+  // una acción irreversible sobre una lista que podría estar vieja o — si
+  // la consulta falla acá — vacía por error, no por ser realmente 0.
+  const [cargandoModal, setCargandoModal] = useState(false)
+  const [errorModal, setErrorModal] = useState<ErrorCarga | null>(null)
+  const [gruposModal, setGruposModal] = useState<GrupoNombre[] | null>(null)
+
   const cargar = useCallback(async () => {
     setCargando(true)
     try {
       const { data: { user } } = await supabase.auth.getUser()
       if (!user) { router.replace('/login'); return }
+      setUsuarioId(user.id)
 
       const [{ data: usuario }, listaGrupos] = await Promise.all([
         supabase.from('usuarios').select('nombre, avatar_color').eq('id', user.id).single(),
@@ -93,10 +104,26 @@ export default function PerfilPage() {
     }
   }
 
+  const cargarGruposModal = useCallback(async () => {
+    setCargandoModal(true)
+    setErrorModal(null)
+    try {
+      if (!usuarioId) return
+      const lista = await listarGruposActivos(usuarioId)
+      setGruposModal(lista)
+    } catch (e) {
+      setErrorModal(e instanceof ErrorCarga ? e : new ErrorCarga('inesperado', 'Algo salió mal. Inténtalo de nuevo.', e))
+    } finally {
+      setCargandoModal(false)
+    }
+  }, [usuarioId])
+
   function abrirModal() {
     setConfirmacion('')
     setError(null)
+    setGruposModal(null)
     setMostrarModal(true)
+    cargarGruposModal()
   }
 
   async function handleReiniciar() {
@@ -256,71 +283,96 @@ export default function PerfilPage() {
               width: '100%', maxWidth: 380, background: 'var(--color-surface-white)', borderRadius: 22,
               padding: 24, boxSizing: 'border-box', boxShadow: '0 20px 50px rgba(0,0,0,.25)',
             }}>
-              <div style={{ textAlign: 'center' }}>
-                <div style={{
-                  width: 56, height: 56, borderRadius: '50%', background: 'var(--color-negative-tint)',
-                  display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 14px',
-                }}>
-                  <svg width="24" height="24" viewBox="0 0 20 20" fill="none">
-                    <path d="M15.5 6.5A6 6 0 105.6 12M15.5 6.5V3M15.5 6.5H12" stroke="var(--color-negative)" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
-                  </svg>
-                </div>
-                <h2 style={{ margin: 0, fontFamily: F_HEAD, fontSize: 19, fontWeight: 800, letterSpacing: '-0.01em', color: 'var(--color-text-primary)' }}>
-                  Vas a salir de tus {grupos.length} grupo{grupos.length === 1 ? '' : 's'}
-                </h2>
-                <p style={{ margin: '8px 0 0', fontSize: 13, lineHeight: 1.5, color: 'var(--color-text-secondary)', fontFamily: F_BODY }}>
-                  {formatearListaConY(grupos.map(g => g.nombre))}. Tu historial queda en cada uno, marcado como que ya no pertenecés.
+              {cargandoModal ? (
+                <p style={{ margin: 0, fontSize: 13.5, color: 'var(--color-text-secondary)', fontFamily: F_BODY, textAlign: 'center', padding: '20px 0' }}>
+                  Cargando…
                 </p>
-              </div>
-
-              <div style={{ marginTop: 20 }}>
-                <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: '0.06em', textTransform: 'uppercase', color: 'var(--color-text-muted)', marginBottom: 8, textAlign: 'center' }}>
-                  Escribí {CONFIRMACION} para confirmar
+              ) : errorModal ? (
+                <div style={{ padding: '8px 0' }}>
+                  <p style={{ margin: '0 0 12px', fontSize: 13.5, fontWeight: 700, color: 'var(--color-text-primary)', fontFamily: F_BODY, textAlign: 'center' }}>
+                    No pudimos revisar tus grupos
+                  </p>
+                  <EstadoErrorCompacto mensaje={errorModal.message} onReintentar={cargarGruposModal} />
+                  <button
+                    onClick={() => setMostrarModal(false)}
+                    style={{
+                      height: 44, width: '100%', borderRadius: 13, border: '1px solid var(--color-border)',
+                      background: 'var(--color-surface-white)', color: 'var(--color-text-primary)',
+                      fontSize: 13.5, fontWeight: 700, fontFamily: F_BODY, cursor: 'pointer', marginTop: 14,
+                    }}
+                  >
+                    Cerrar
+                  </button>
                 </div>
-                <input
-                  value={confirmacion}
-                  onChange={e => setConfirmacion(e.target.value.toUpperCase())}
-                  autoFocus
-                  style={{
-                    width: '100%', height: 50, borderRadius: 13, textAlign: 'center', boxSizing: 'border-box',
-                    border: `1.5px solid ${confirmacion === CONFIRMACION ? 'var(--color-cta)' : 'var(--color-border)'}`,
-                    fontSize: 16, fontWeight: 700, letterSpacing: '.1em', color: 'var(--color-text-primary)',
-                    fontFamily: F_BODY, outline: 'none',
-                  }}
-                />
-              </div>
+              ) : (
+                <>
+                  <div style={{ textAlign: 'center' }}>
+                    <div style={{
+                      width: 56, height: 56, borderRadius: '50%', background: 'var(--color-negative-tint)',
+                      display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 14px',
+                    }}>
+                      <svg width="24" height="24" viewBox="0 0 20 20" fill="none">
+                        <path d="M15.5 6.5A6 6 0 105.6 12M15.5 6.5V3M15.5 6.5H12" stroke="var(--color-negative)" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+                      </svg>
+                    </div>
+                    <h2 style={{ margin: 0, fontFamily: F_HEAD, fontSize: 19, fontWeight: 800, letterSpacing: '-0.01em', color: 'var(--color-text-primary)' }}>
+                      Vas a salir de tus {(gruposModal ?? []).length} grupo{(gruposModal ?? []).length === 1 ? '' : 's'}
+                    </h2>
+                    <p style={{ margin: '8px 0 0', fontSize: 13, lineHeight: 1.5, color: 'var(--color-text-secondary)', fontFamily: F_BODY }}>
+                      {formatearListaConY((gruposModal ?? []).map(g => g.nombre))}. Tu historial queda en cada uno, marcado como que ya no pertenecés.
+                    </p>
+                  </div>
 
-              {error && (
-                <p style={{ margin: '12px 0 0', fontSize: 13, color: 'var(--color-negative)', fontFamily: F_BODY, textAlign: 'center' }}>{error}</p>
+                  <div style={{ marginTop: 20 }}>
+                    <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: '0.06em', textTransform: 'uppercase', color: 'var(--color-text-muted)', marginBottom: 8, textAlign: 'center' }}>
+                      Escribí {CONFIRMACION} para confirmar
+                    </div>
+                    <input
+                      value={confirmacion}
+                      onChange={e => setConfirmacion(e.target.value.toUpperCase())}
+                      autoFocus
+                      style={{
+                        width: '100%', height: 50, borderRadius: 13, textAlign: 'center', boxSizing: 'border-box',
+                        border: `1.5px solid ${confirmacion === CONFIRMACION ? 'var(--color-cta)' : 'var(--color-border)'}`,
+                        fontSize: 16, fontWeight: 700, letterSpacing: '.1em', color: 'var(--color-text-primary)',
+                        fontFamily: F_BODY, outline: 'none',
+                      }}
+                    />
+                  </div>
+
+                  {error && (
+                    <p style={{ margin: '12px 0 0', fontSize: 13, color: 'var(--color-negative)', fontFamily: F_BODY, textAlign: 'center' }}>{error}</p>
+                  )}
+
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 10, marginTop: 18 }}>
+                    <button
+                      onClick={handleReiniciar}
+                      disabled={confirmacion !== CONFIRMACION || reiniciando}
+                      style={{
+                        height: 52, width: '100%', borderRadius: 15, border: 'none',
+                        background: confirmacion === CONFIRMACION ? 'var(--color-negative)' : '#E7E7EE',
+                        color: confirmacion === CONFIRMACION ? '#fff' : '#AFAFBC',
+                        fontSize: 14.5, fontWeight: 700, fontFamily: F_BODY,
+                        cursor: confirmacion === CONFIRMACION ? 'pointer' : 'default',
+                        transition: 'background 150ms ease, color 150ms ease',
+                      }}
+                    >
+                      {reiniciando ? 'Reiniciando…' : 'Reiniciar mi cuenta'}
+                    </button>
+                    <button
+                      onClick={() => setMostrarModal(false)}
+                      disabled={reiniciando}
+                      style={{
+                        height: 52, width: '100%', borderRadius: 15, border: '1px solid var(--color-border)',
+                        background: 'var(--color-surface-white)', color: 'var(--color-text-primary)',
+                        fontSize: 14.5, fontWeight: 700, fontFamily: F_BODY, cursor: 'pointer',
+                      }}
+                    >
+                      Cancelar
+                    </button>
+                  </div>
+                </>
               )}
-
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 10, marginTop: 18 }}>
-                <button
-                  onClick={handleReiniciar}
-                  disabled={confirmacion !== CONFIRMACION || reiniciando}
-                  style={{
-                    height: 52, width: '100%', borderRadius: 15, border: 'none',
-                    background: confirmacion === CONFIRMACION ? 'var(--color-negative)' : '#E7E7EE',
-                    color: confirmacion === CONFIRMACION ? '#fff' : '#AFAFBC',
-                    fontSize: 14.5, fontWeight: 700, fontFamily: F_BODY,
-                    cursor: confirmacion === CONFIRMACION ? 'pointer' : 'default',
-                    transition: 'background 150ms ease, color 150ms ease',
-                  }}
-                >
-                  {reiniciando ? 'Reiniciando…' : 'Reiniciar mi cuenta'}
-                </button>
-                <button
-                  onClick={() => setMostrarModal(false)}
-                  disabled={reiniciando}
-                  style={{
-                    height: 52, width: '100%', borderRadius: 15, border: '1px solid var(--color-border)',
-                    background: 'var(--color-surface-white)', color: 'var(--color-text-primary)',
-                    fontSize: 14.5, fontWeight: 700, fontFamily: F_BODY, cursor: 'pointer',
-                  }}
-                >
-                  Cancelar
-                </button>
-              </div>
             </div>
           </div>
         </>

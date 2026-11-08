@@ -44,3 +44,37 @@ export function EstadoError({ mensaje, onReintentar, reintentando }: EstadoError
     </div>
   )
 }
+
+interface EstadoErrorCompactoProps {
+  mensaje?: string
+  onReintentar: () => void
+  reintentando?: boolean
+}
+
+/**
+ * Variante compacta de EstadoError, para una tarjeta o fila puntual dentro
+ * de una lista más grande (ej. una fila de "Inicio" o "Grupos" cuando falla
+ * SOLO el saldo de ESE grupo) — no reemplaza toda la pantalla, así que lo
+ * que sí cargó bien en el resto de la lista se mantiene visible.
+ */
+export function EstadoErrorCompacto({ mensaje, onReintentar, reintentando }: EstadoErrorCompactoProps) {
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+      <span style={{ fontSize: 15, flexShrink: 0 }}>⚠️</span>
+      <span style={{ flex: 1, fontSize: 12, color: 'var(--color-text-secondary)', fontFamily: F_BODY }}>
+        {mensaje ?? 'No se pudo cargar'}
+      </span>
+      <button
+        onClick={onReintentar}
+        disabled={reintentando}
+        style={{
+          flexShrink: 0, background: 'none', border: 'none', padding: 0,
+          fontSize: 12, fontWeight: 700, color: 'var(--color-cta-dark)', fontFamily: F_BODY,
+          cursor: reintentando ? 'default' : 'pointer', opacity: reintentando ? 0.6 : 1,
+        }}
+      >
+        {reintentando ? 'Reintentando…' : 'Reintentar'}
+      </button>
+    </div>
+  )
+}

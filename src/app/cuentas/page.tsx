@@ -1,6 +1,6 @@
 'use client'
 
-import { Suspense, useEffect, useState } from 'react'
+import { Suspense, useCallback, useEffect, useState } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import Link from 'next/link'
 import { supabase } from '@/lib/supabase'
@@ -8,9 +8,11 @@ import { resolverGrupoActivo, type GrupoOpcion } from '@/lib/grupo-activo'
 import { hrefHomeGrupo } from '@/lib/grupo'
 import { listarCuentasConResumen, ICONO_TIPO, type CuentaResumen, type ResumenGrupo } from '@/lib/cuentas'
 import { formatCLP } from '@/lib/format'
+import { ErrorCarga } from '@/lib/errores-carga'
 import { Avatar } from '@/components/app/Avatar'
 import { BottomNav } from '@/components/app/BottomNav'
 import { HeaderGrupoInterno } from '@/components/app/HeaderGrupoInterno'
+import { EstadoError } from '@/components/app/EstadoError'
 
 const F_HEAD = 'var(--font-sora), sans-serif'
 const F_BODY = 'var(--font-dm-sans), sans-serif'
@@ -99,22 +101,21 @@ function CuentasListadoInner() {
   const router = useRouter()
   const params = useSearchParams()
 
-  const [estado, setEstado] = useState<'cargando' | 'elegir-grupo' | 'ok'>('cargando')
+  const [estado, setEstado] = useState<'cargando' | 'elegir-grupo' | 'ok' | 'error'>('cargando')
+  const [errorCarga, setErrorCarga] = useState<ErrorCarga | null>(null)
   const [grupos, setGrupos] = useState<GrupoOpcion[]>([])
   const [grupoId, setGrupoId] = useState('')
   const [grupoNombre, setGrupoNombre] = useState('')
   const [cuentas, setCuentas] = useState<CuentaResumen[]>([])
   const [resumen, setResumen] = useState<ResumenGrupo>({ tuParteTotal: 0, pagado: 0, pendiente: 0 })
 
-  useEffect(() => {
-    let activo = true
-
-    async function cargar() {
+  const cargar = useCallback(async () => {
+    setEstado('cargando')
+    try {
       const { data: { user } } = await supabase.auth.getUser()
       if (!user) { router.replace('/login'); return }
 
       const resolucion = await resolverGrupoActivo(user.id, params.get('grupo'))
-      if (!activo) return
 
       if (resolucion.estado === 'sin-grupos') { router.replace('/'); return }
       if (resolucion.estado === 'elegir') {
@@ -128,22 +129,37 @@ function CuentasListadoInner() {
         listarCuentasConResumen(resolucion.grupoId, user.id),
       ])
 
-      if (!activo) return
       setGrupoId(resolucion.grupoId)
       setGrupoNombre(grupo?.nombre ?? '')
       setCuentas(listaCuentas)
       setResumen(resumenGrupo)
       setEstado('ok')
+    } catch (e) {
+      setErrorCarga(e instanceof ErrorCarga ? e : new ErrorCarga('inesperado', 'Algo salió mal. Inténtalo de nuevo.', e))
+      setEstado('error')
     }
-
-    cargar()
-    return () => { activo = false }
   }, [router, params])
+
+  useEffect(() => {
+    let activo = true
+    if (activo) cargar()
+    return () => { activo = false }
+  }, [cargar])
 
   if (estado === 'cargando') {
     return (
       <main style={{ minHeight: '100dvh', background: 'var(--color-bg)' }}>
         <p style={{ padding: 24, fontSize: 13.5, color: 'var(--color-text-secondary)', fontFamily: F_BODY }}>Cargando…</p>
+      </main>
+    )
+  }
+
+  if (estado === 'error') {
+    return (
+      <main style={{ minHeight: '100dvh', background: 'var(--color-bg)' }}>
+        <div style={{ maxWidth: 440, margin: '0 auto', padding: '0 18px', paddingTop: 'max(20px, env(safe-area-inset-top, 0px))' }}>
+          <EstadoError mensaje={errorCarga?.message ?? 'Algo salió mal. Inténtalo de nuevo.'} onReintentar={cargar} />
+        </div>
       </main>
     )
   }

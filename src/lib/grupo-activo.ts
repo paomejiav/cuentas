@@ -1,4 +1,5 @@
 import { supabase } from '@/lib/supabase'
+import { leer } from '@/lib/errores-carga'
 
 export interface GrupoOpcion {
   id: string
@@ -72,11 +73,17 @@ export async function obtenerSeleccion(
   return { seleccion: { tipo: 'todos' }, grupos }
 }
 
+// Lanza ErrorCarga si la consulta falla — antes devolvía [], indistinguible
+// de "no tenés grupos", y obtenerSeleccion/resolverGrupoActivo mandaban a la
+// persona al onboarding de "sin grupos" sobre una lectura que nunca llegó.
 async function listarGruposDeUsuario(usuarioId: string): Promise<GrupoOpcion[]> {
-  const { data } = await supabase
-    .from('grupo_miembros')
-    .select('grupo_id, grupos ( id, nombre )')
-    .eq('usuario_id', usuarioId)
+  const data = await leer(
+    supabase
+      .from('grupo_miembros')
+      .select('grupo_id, grupos ( id, nombre )')
+      .eq('usuario_id', usuarioId),
+    'listarGruposDeUsuario'
+  )
 
   const filas = (data ?? []) as unknown as { grupo_id: string; grupos: { id: string; nombre: string } | null }[]
   return filas

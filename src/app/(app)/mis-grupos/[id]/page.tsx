@@ -1,6 +1,6 @@
 'use client'
 
-import { use, useEffect, useState } from 'react'
+import { use, useCallback, useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { supabase } from '@/lib/supabase'
@@ -12,10 +12,12 @@ import {
   type SaldoIntegrante, type ResumenGastosGrupo, type GastoMesPorCuenta,
 } from '@/lib/cuentas'
 import { formatCLP, formatearTiempoRelativo, capitalizar } from '@/lib/format'
+import { ErrorCarga } from '@/lib/errores-carga'
 import { Avatar } from '@/components/app/Avatar'
 import { colorDeGrupo } from '@/lib/colores-grupo'
 import { HeaderGrupoInterno } from '@/components/app/HeaderGrupoInterno'
 import { BottomNav } from '@/components/app/BottomNav'
+import { EstadoError } from '@/components/app/EstadoError'
 
 const F_HEAD = 'var(--font-sora), sans-serif'
 const F_BODY = 'var(--font-dm-sans), sans-serif'
@@ -87,23 +89,23 @@ export default function GrupoHomePage({ params }: { params: Promise<{ id: string
   const { id: grupoId } = use(params)
   const router = useRouter()
 
-  const [fase, setFase] = useState<'cargando' | 'ok'>('cargando')
+  const [fase, setFase] = useState<'cargando' | 'ok' | 'error'>('cargando')
+  const [errorCarga, setErrorCarga] = useState<ErrorCarga | null>(null)
   const [grupoNombre, setGrupoNombre] = useState('')
   const [resumenGrupo, setResumenGrupo] = useState<ResumenGastosGrupo>({ saldoTotal: 0, ultimaActividad: null })
   const [saldosPersonas, setSaldosPersonas] = useState<SaldoIntegrante[]>([])
   const [gastoPorCuenta, setGastoPorCuenta] = useState<GastoMesPorCuenta[]>([])
   const [verTodoPersonas, setVerTodoPersonas] = useState(false)
 
-  useEffect(() => {
-    let activo = true
-    async function cargar() {
+  const cargar = useCallback(async () => {
+    setFase('cargando')
+    try {
       const { data: { user } } = await supabase.auth.getUser()
       if (!user) { router.replace('/login'); return }
 
       // La home depende del id de la ruta, no de la cookie — valida que
       // siga siendo un grupo activo del usuario antes de mostrar nada.
       const gruposActivos = await listarGruposConIntegrantes(user.id)
-      if (!activo) return
       const grupo = gruposActivos.find(g => g.id === grupoId)
       if (!grupo) { router.replace('/mis-grupos'); return }
 
@@ -118,16 +120,22 @@ export default function GrupoHomePage({ params }: { params: Promise<{ id: string
         calcularSaldosGrupo(grupoId, user.id),
         obtenerGastoMesPorCuenta(grupoId, desde, hasta),
       ])
-      if (!activo) return
       setGrupoNombre(grupo.nombre)
       setResumenGrupo(resumen)
       setSaldosPersonas(saldos)
       setGastoPorCuenta(porCuenta.filter(c => c.monto > 0))
       setFase('ok')
+    } catch (e) {
+      setErrorCarga(e instanceof ErrorCarga ? e : new ErrorCarga('inesperado', 'Algo salió mal. Inténtalo de nuevo.', e))
+      setFase('error')
     }
-    cargar()
-    return () => { activo = false }
   }, [router, grupoId])
+
+  useEffect(() => {
+    let activo = true
+    if (activo) cargar()
+    return () => { activo = false }
+  }, [cargar])
 
   const mesLabel = capitalizar(nombreMesDeFecha(limitesMesActualSantiago().desde))
 
@@ -138,6 +146,16 @@ export default function GrupoHomePage({ params }: { params: Promise<{ id: string
           <div style={{ display: 'flex', flexDirection: 'column', gap: 12, marginTop: 10 }}>
             {[140, 180, 140, 100].map((h, i) => <div key={i} className="skeleton" style={{ height: h, borderRadius: 18 }} />)}
           </div>
+        </div>
+      </main>
+    )
+  }
+
+  if (fase === 'error') {
+    return (
+      <main style={{ minHeight: '100dvh', background: 'var(--color-bg)' }}>
+        <div style={{ maxWidth: 440, margin: '0 auto', padding: '0 18px', paddingTop: 'max(20px, env(safe-area-inset-top, 0px))' }}>
+          <EstadoError mensaje={errorCarga?.message ?? 'Algo salió mal. Inténtalo de nuevo.'} onReintentar={cargar} />
         </div>
       </main>
     )

@@ -1,6 +1,6 @@
 'use client'
 
-import { Suspense, useEffect, useMemo, useState } from 'react'
+import { Suspense, useCallback, useEffect, useMemo, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { supabase } from '@/lib/supabase'
@@ -12,17 +12,19 @@ import {
   limitesMesActualSantiago, nombreMesDeFecha, type SaldoIntegrante,
 } from '@/lib/cuentas'
 import { formatCLP, formatCLPConSigno, capitalizar } from '@/lib/format'
+import { ErrorCarga } from '@/lib/errores-carga'
 import { Avatar } from '@/components/app/Avatar'
 import { AvatarGrupo } from '@/components/app/AvatarGrupo'
 import { SelectorGrupoSheet } from '@/components/app/SelectorGrupoSheet'
 import { colorDeGrupo } from '@/lib/colores-grupo'
 import { BottomNav } from '@/components/app/BottomNav'
 import { FlujoCrearUnirseGrupo } from '@/components/app/FlujoCrearUnirseGrupo'
+import { EstadoError } from '@/components/app/EstadoError'
 
 const F_HEAD = 'var(--font-sora), sans-serif'
 const F_BODY = 'var(--font-dm-sans), sans-serif'
 
-type Fase = 'cargando' | 'vacio' | 'todos'
+type Fase = 'cargando' | 'vacio' | 'todos' | 'error'
 
 const OCULTAR_PRIMEROS_PASOS_KEY = 'bts_primeros_pasos_oculto'
 
@@ -329,6 +331,7 @@ function InicioPageInner() {
   const router = useRouter()
 
   const [fase, setFase] = useState<Fase>('cargando')
+  const [errorCarga, setErrorCarga] = useState<ErrorCarga | null>(null)
   const [nombreUsuario, setNombreUsuario] = useState('')
   const [avatarColor, setAvatarColor] = useState('#A8D8B9')
   const [grupos, setGrupos] = useState<GrupoParaSheet[]>([])
@@ -357,9 +360,9 @@ function InicioPageInner() {
     setPrimerosPasosOculto(leerPrimerosPasosOculto())
   }, [])
 
-  useEffect(() => {
-    let activo = true
-    async function cargar() {
+  const cargar = useCallback(async () => {
+    setFase('cargando')
+    try {
       const { data: { user } } = await supabase.auth.getUser()
       if (!user) { router.replace('/login'); return }
 
@@ -367,7 +370,6 @@ function InicioPageInner() {
         supabase.from('usuarios').select('nombre, avatar_color').eq('id', user.id).single(),
         obtenerSeleccion(user.id, 'todos'), // Inicio ignora ?grupo= y la cookie: siempre es la vista general
       ])
-      if (!activo) return
       setNombreUsuario(usuario?.nombre ?? '')
       setAvatarColor(usuario?.avatar_color ?? '#A8D8B9')
 
@@ -383,7 +385,6 @@ function InicioPageInner() {
       }
 
       const conIntegrantes = await listarGruposConIntegrantes(user.id)
-      if (!activo) return
       setGrupos(conIntegrantes)
 
       setFase('todos')
@@ -406,7 +407,6 @@ function InicioPageInner() {
           calcularSaldosPersonal(user.id),
           obtenerGastoMesPersonal(user.id, desdeMes, hastaMes),
         ])
-        if (!activo) return
 
         const personalTeDeben = sumarPositivos(saldosPersonal)
         const personalDebes = sumarNegativos(saldosPersonal)
@@ -415,10 +415,17 @@ function InicioPageInner() {
         setHayPersonal(saldosPersonal.length > 0)
         setCargandoTodos(false)
       }
+    } catch (e) {
+      setErrorCarga(e instanceof ErrorCarga ? e : new ErrorCarga('inesperado', 'Algo salió mal. Inténtalo de nuevo.', e))
+      setFase('error')
     }
-    cargar()
+  }, [router, desdeMes, hastaMes])
+
+  useEffect(() => {
+    let activo = true
+    if (activo) cargar()
     return () => { activo = false }
-  }, [router])
+  }, [cargar])
 
   const filasSaldo = useMemo(() => {
     const filas = porGrupo.map(g => ({ id: g.id, nombre: g.nombre, valor: g.neto, esPersonal: false }))
@@ -482,6 +489,16 @@ function InicioPageInner() {
     }
 
     setSheetModo({ tipo: 'accion', destino })
+  }
+
+  if (fase === 'error') {
+    return (
+      <main style={{ minHeight: '100dvh', background: 'var(--color-bg)' }}>
+        <div style={{ maxWidth: 440, margin: '0 auto', padding: '0 18px', paddingTop: 'max(20px, env(safe-area-inset-top, 0px))' }}>
+          <EstadoError mensaje={errorCarga?.message ?? 'Algo salió mal. Inténtalo de nuevo.'} onReintentar={cargar} />
+        </div>
+      </main>
+    )
   }
 
   if (fase === 'cargando') {

@@ -40,7 +40,12 @@ export function HeaderGrupoInterno({ grupoId, grupoNombre, rutaBase, volverHref,
     let activo = true
     supabase.auth.getUser().then(({ data: { user } }) => {
       if (!user || !activo) return
-      listarGruposConIntegrantes(user.id).then(g => { if (activo) setGrupos(g) })
+      // Si falla, el selector simplemente no ofrece otros grupos para
+      // cambiarse — no es la pantalla de "sin grupos", solo el chip/sheet
+      // de cambio rápido, así que no hay un EstadoError propio acá.
+      listarGruposConIntegrantes(user.id)
+        .then(g => { if (activo) setGrupos(g) })
+        .catch(e => console.error('[HeaderGrupoInterno]', e))
     })
     return () => { activo = false }
   }, [])

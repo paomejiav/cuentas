@@ -1,6 +1,6 @@
 'use client'
 
-import { Suspense, useEffect, useMemo, useState } from 'react'
+import { Suspense, useCallback, useEffect, useMemo, useState } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import Link from 'next/link'
 import { supabase } from '@/lib/supabase'
@@ -17,12 +17,14 @@ import {
 } from '@/lib/historial'
 import { CATEGORIA_EMOJI, METODO_LABEL } from '@/types/database'
 import { formatCLP } from '@/lib/format'
+import { ErrorCarga } from '@/lib/errores-carga'
 import { Avatar } from '@/components/app/Avatar'
 import { AvatarGrupo } from '@/components/app/AvatarGrupo'
 import { ChipGrupo } from '@/components/app/ChipGrupo'
 import { SelectorGrupoSheet } from '@/components/app/SelectorGrupoSheet'
 import { FlujoCrearUnirseGrupo } from '@/components/app/FlujoCrearUnirseGrupo'
 import { BottomNav } from '@/components/app/BottomNav'
+import { EstadoError } from '@/components/app/EstadoError'
 
 const F_HEAD = 'var(--font-sora), sans-serif'
 const F_BODY = 'var(--font-dm-sans), sans-serif'
@@ -198,7 +200,8 @@ function HistorialInner() {
   const router = useRouter()
   const params = useSearchParams()
 
-  const [fase, setFase] = useState<'cargando' | 'ok'>('cargando')
+  const [fase, setFase] = useState<'cargando' | 'ok' | 'error'>('cargando')
+  const [errorCarga, setErrorCarga] = useState<ErrorCarga | null>(null)
   const [seleccion, setSeleccion] = useState<Seleccion>({ tipo: 'todos' })
   const [gruposActivos, setGruposActivos] = useState<GrupoOpcion[]>([])
   const [gruposParaSheet, setGruposParaSheet] = useState<GrupoParaSheet[]>([])
@@ -237,17 +240,20 @@ function HistorialInner() {
   const [filtroAplicado, setFiltroAplicado] = useState<FiltroState>(FILTRO_DEFAULT)
   const [filtroDraft, setFiltroDraft] = useState<FiltroState>(FILTRO_DEFAULT)
 
-  useEffect(() => {
-    let activo = true
-    async function cargar() {
+  const cargar = useCallback(async () => {
+    setFase('cargando')
+    try {
       const { data: { user } } = await supabase.auth.getUser()
       if (!user) { router.replace('/login'); return }
-      if (!activo) return
       setUsuarioId(user.id)
 
       // Entrada directa a la vista Personal (ej. desde "Nuevo gasto
       // personal"): fuerza selección "todos" + alcance personal, sin
-      // bloquear con nada del lado de grupos.
+      // bloquear con nada del lado de grupos. fase pasa a 'ok' ANTES de
+      // esperar grupos/gruposParaSheet (igual que antes de este cambio) para
+      // que la carga perezosa de lo personal arranque en paralelo, no en
+      // serie, con la lista de grupos — si la consulta de grupos falla
+      // DESPUÉS, el catch de más abajo igual lo corrige a 'error'.
       if (params.get('tab') === 'personal') {
         setSeleccion({ tipo: 'todos' })
         setAlcance('personal')
@@ -256,7 +262,6 @@ function HistorialInner() {
           obtenerSeleccion(user.id, null),
           listarGruposConIntegrantes(user.id),
         ])
-        if (!activo) return
         setGruposActivos(listaGrupos)
         setGruposParaSheet(conIntegrantes)
         return
@@ -266,7 +271,6 @@ function HistorialInner() {
         obtenerSeleccion(user.id, params.get('grupo')),
         listarGruposConIntegrantes(user.id),
       ])
-      if (!activo) return
 
       if (listaGrupos.length === 0) { router.replace('/'); return }
       setGruposParaSheet(conIntegrantes)
@@ -274,10 +278,17 @@ function HistorialInner() {
       setGruposActivos(listaGrupos)
       setSeleccion(sel)
       setFase('ok')
+    } catch (e) {
+      setErrorCarga(e instanceof ErrorCarga ? e : new ErrorCarga('inesperado', 'Algo salió mal. Inténtalo de nuevo.', e))
+      setFase('error')
     }
-    cargar()
-    return () => { activo = false }
   }, [router, params])
+
+  useEffect(() => {
+    let activo = true
+    if (activo) cargar()
+    return () => { activo = false }
+  }, [cargar])
 
   useEffect(() => {
     if (fase !== 'ok' || seleccion.tipo !== 'grupo') return
@@ -480,6 +491,16 @@ function HistorialInner() {
     return (
       <main style={{ minHeight: '100dvh', background: 'var(--color-bg)' }}>
         <p style={{ padding: 24, fontSize: 13.5, color: 'var(--color-text-secondary)', fontFamily: F_BODY }}>Cargando…</p>
+      </main>
+    )
+  }
+
+  if (fase === 'error') {
+    return (
+      <main style={{ minHeight: '100dvh', background: 'var(--color-bg)' }}>
+        <div style={{ maxWidth: 440, margin: '0 auto', padding: '0 18px', paddingTop: 'max(20px, env(safe-area-inset-top, 0px))' }}>
+          <EstadoError mensaje={errorCarga?.message ?? 'Algo salió mal. Inténtalo de nuevo.'} onReintentar={cargar} />
+        </div>
       </main>
     )
   }

@@ -1,5 +1,6 @@
 import { supabase } from '@/lib/supabase'
 import type { UsuarioMini } from '@/lib/cuentas'
+import { leer } from '@/lib/errores-carga'
 
 export interface IntegranteActivo extends UsuarioMini {
   rol: 'admin' | 'miembro'
@@ -129,11 +130,14 @@ export function hrefHomeGrupo(grupoId: string): string {
 }
 
 export async function listarGruposActivos(usuarioId: string): Promise<GrupoNombre[]> {
-  const { data } = await supabase
-    .from('grupo_miembros')
-    .select('grupos ( id, nombre )')
-    .eq('usuario_id', usuarioId)
-    .eq('activo', true)
+  const data = await leer(
+    supabase
+      .from('grupo_miembros')
+      .select('grupos ( id, nombre )')
+      .eq('usuario_id', usuarioId)
+      .eq('activo', true),
+    'listarGruposActivos'
+  )
 
   const filas = (data ?? []) as unknown as { grupos: GrupoNombre | null }[]
   return filas.map(f => f.grupos).filter((g): g is GrupoNombre => !!g)
@@ -163,11 +167,14 @@ export async function listarGruposConIntegrantes(usuarioId: string): Promise<Gru
   const grupos = await listarGruposActivos(usuarioId)
   if (grupos.length === 0) return []
 
-  const { data } = await supabase
-    .from('grupo_miembros')
-    .select('grupo_id')
-    .in('grupo_id', grupos.map(g => g.id))
-    .eq('activo', true)
+  const data = await leer(
+    supabase
+      .from('grupo_miembros')
+      .select('grupo_id')
+      .in('grupo_id', grupos.map(g => g.id))
+      .eq('activo', true),
+    'listarGruposConIntegrantes'
+  )
 
   const conteo = new Map<string, number>()
   for (const fila of (data ?? []) as { grupo_id: string }[]) {

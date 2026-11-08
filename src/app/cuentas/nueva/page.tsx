@@ -1,11 +1,13 @@
 'use client'
 
-import { Suspense, useEffect, useState } from 'react'
+import { Suspense, useCallback, useEffect, useState } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
 import { resolverGrupoActivo } from '@/lib/grupo-activo'
 import { listarMiembrosGrupoParaCuenta, ICONO_TIPO, LABEL_TIPO, type TipoCuenta, type MiembroGrupoMini } from '@/lib/cuentas'
+import { ErrorCarga } from '@/lib/errores-carga'
 import { Avatar } from '@/components/app/Avatar'
+import { EstadoError } from '@/components/app/EstadoError'
 
 const F_HEAD = 'var(--font-sora), sans-serif'
 const F_BODY = 'var(--font-dm-sans), sans-serif'
@@ -33,30 +35,35 @@ function NuevaCuentaInner() {
   const [seleccionados, setSeleccionados] = useState<Set<string>>(new Set())
   const [creando, setCreando] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [errorCarga, setErrorCarga] = useState<ErrorCarga | null>(null)
 
-  useEffect(() => {
-    let activo = true
-
-    async function cargar() {
+  const cargar = useCallback(async () => {
+    setCargando(true)
+    try {
       const { data: { user } } = await supabase.auth.getUser()
       if (!user) { router.replace('/login'); return }
 
       const resolucion = await resolverGrupoActivo(user.id, params.get('grupo'))
-      if (!activo) return
 
       if (resolucion.estado === 'sin-grupos') { router.replace('/'); return }
       if (resolucion.estado === 'elegir') { router.replace('/cuentas'); return }
 
       const lista = await listarMiembrosGrupoParaCuenta(resolucion.grupoId, null, user.id)
-      if (!activo) return
       setGrupoId(resolucion.grupoId)
       setMiembros(lista)
+      setErrorCarga(null)
+    } catch (e) {
+      setErrorCarga(e instanceof ErrorCarga ? e : new ErrorCarga('inesperado', 'Algo salió mal. Inténtalo de nuevo.', e))
+    } finally {
       setCargando(false)
     }
-
-    cargar()
-    return () => { activo = false }
   }, [router, params])
+
+  useEffect(() => {
+    let activo = true
+    if (activo) cargar()
+    return () => { activo = false }
+  }, [cargar])
 
   function toggleMiembro(id: string) {
     setSeleccionados(prev => {
@@ -98,6 +105,16 @@ function NuevaCuentaInner() {
     return (
       <main style={{ minHeight: '100dvh', background: 'var(--color-bg)' }}>
         <p style={{ padding: 24, fontSize: 13.5, color: 'var(--color-text-secondary)', fontFamily: F_BODY }}>Cargando…</p>
+      </main>
+    )
+  }
+
+  if (errorCarga) {
+    return (
+      <main style={{ minHeight: '100dvh', background: 'var(--color-bg)' }}>
+        <div style={{ maxWidth: 440, margin: '0 auto', padding: '0 18px', paddingTop: 'max(20px, env(safe-area-inset-top, 0px))' }}>
+          <EstadoError mensaje={errorCarga.message} onReintentar={cargar} />
+        </div>
       </main>
     )
   }

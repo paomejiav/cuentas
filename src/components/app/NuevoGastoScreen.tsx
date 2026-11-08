@@ -1,10 +1,12 @@
 'use client'
 
-import { Suspense, useEffect, useState, useMemo, useRef } from 'react'
+import { Suspense, useCallback, useEffect, useState, useMemo, useRef } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
 import { obtenerSeleccion } from '@/lib/grupo-activo'
 import { listarGruposConIntegrantes, type GrupoParaSheet } from '@/lib/grupo'
+import { ErrorCarga } from '@/lib/errores-carga'
+import { EstadoError } from '@/components/app/EstadoError'
 import {
   crearGasto, validarPaso1, validarPaso2, calcularMontosPorPersona,
   listarParticipantesPosibles, listarCuentasActivasGrupo,
@@ -176,7 +178,8 @@ function NuevoGastoScreenInner({ cuentaFija, personal }: Props) {
   const router = useRouter()
   const params = useSearchParams()
 
-  const [fase, setFase] = useState<'cargando' | 'listo'>('cargando')
+  const [fase, setFase] = useState<'cargando' | 'listo' | 'error'>('cargando')
+  const [errorCarga, setErrorCarga] = useState<ErrorCarga | null>(null)
   const [grupoId, setGrupoId] = useState<string | null>(null)
   const [grupoNombre, setGrupoNombre] = useState('')
   const [gruposParaSheet, setGruposParaSheet] = useState<GrupoParaSheet[]>([])
@@ -222,13 +225,11 @@ function NuevoGastoScreenInner({ cuentaFija, personal }: Props) {
   }
 
   // ── Resolver usuario + grupo (+ cuentas del grupo si no hay cuenta fija) ──
-  useEffect(() => {
-    let activo = true
-
-    async function iniciar() {
+  const iniciar = useCallback(async () => {
+    setFase('cargando')
+    try {
       const { data: { user } } = await supabase.auth.getUser()
       if (!user) { router.replace('/login'); return }
-      if (!activo) return
       setUsuarioId(user.id)
 
       if (personal) {
@@ -246,31 +247,34 @@ function NuevoGastoScreenInner({ cuentaFija, personal }: Props) {
       }
 
       const { seleccion, grupos: listaGrupos } = await obtenerSeleccion(user.id, params.get('grupo'))
-      if (!activo) return
 
       if (listaGrupos.length === 0) { router.replace('/'); return }
 
       const conIntegrantes = await listarGruposConIntegrantes(user.id)
-      if (!activo) return
       setGruposParaSheet(conIntegrantes)
 
       if (seleccion.tipo === 'grupo') {
         setGrupoId(seleccion.grupoId)
         setGrupoNombre(listaGrupos.find(g => g.id === seleccion.grupoId)?.nombre ?? '')
         const cuentas = await listarCuentasActivasGrupo(seleccion.grupoId)
-        if (!activo) return
         setCuentasDisponibles(cuentas)
       }
       // seleccion 'todos' -> grupoId queda null: la fila "Se registra en"
       // arranca vacía y el usuario tiene que elegir un grupo a mano.
 
       setFase('listo')
+    } catch (e) {
+      setErrorCarga(e instanceof ErrorCarga ? e : new ErrorCarga('inesperado', 'Algo salió mal. Inténtalo de nuevo.', e))
+      setFase('error')
     }
-
-    iniciar()
-    return () => { activo = false }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [cuentaFija?.id, personal])
+
+  useEffect(() => {
+    let activo = true
+    if (activo) iniciar()
+    return () => { activo = false }
+  }, [iniciar])
 
   // ── Cargar personas posibles: cuenta_miembros / grupo_miembros, o —en modo
   // personal— vos + contactos compartidos de todos tus grupos ──
@@ -531,6 +535,16 @@ function NuevoGastoScreenInner({ cuentaFija, personal }: Props) {
     return (
       <div style={{ minHeight: '100vh', background: 'var(--color-bg)' }}>
         <p style={{ padding: 24, fontSize: 13.5, color: 'var(--color-text-secondary)', fontFamily: 'var(--font-dm-sans), sans-serif' }}>Cargando…</p>
+      </div>
+    )
+  }
+
+  if (fase === 'error') {
+    return (
+      <div style={{ minHeight: '100vh', background: 'var(--color-bg)' }}>
+        <div style={{ maxWidth: 440, margin: '0 auto', padding: '0 18px', paddingTop: 'max(20px, env(safe-area-inset-top, 0px))' }}>
+          <EstadoError mensaje={errorCarga?.message ?? 'Algo salió mal. Inténtalo de nuevo.'} onReintentar={iniciar} />
+        </div>
       </div>
     )
   }

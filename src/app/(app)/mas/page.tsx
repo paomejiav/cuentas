@@ -1,10 +1,12 @@
 'use client'
 
 import { useRouter } from 'next/navigation'
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { supabase } from '@/lib/supabase'
 import { listarGruposActivos } from '@/lib/grupo'
+import { ErrorCarga } from '@/lib/errores-carga'
 import { BottomNav } from '@/components/app/BottomNav'
+import { EstadoError } from '@/components/app/EstadoError'
 
 const F_HEAD = 'var(--font-sora), sans-serif'
 const F_BODY = 'var(--font-dm-sans), sans-serif'
@@ -13,25 +15,43 @@ export default function MasPage() {
   const router = useRouter()
   const [cargando, setCargando] = useState(true)
   const [sinGrupos, setSinGrupos] = useState(false)
+  const [errorCarga, setErrorCarga] = useState<ErrorCarga | null>(null)
 
-  useEffect(() => {
-    let activo = true
-    async function cargar() {
+  const cargar = useCallback(async () => {
+    setCargando(true)
+    try {
       const { data: { user } } = await supabase.auth.getUser()
       if (!user) { router.replace('/login'); return }
       const grupos = await listarGruposActivos(user.id)
-      if (!activo) return
       setSinGrupos(grupos.length === 0)
+      setErrorCarga(null)
+    } catch (e) {
+      setErrorCarga(e instanceof ErrorCarga ? e : new ErrorCarga('inesperado', 'Algo salió mal. Inténtalo de nuevo.', e))
+    } finally {
       setCargando(false)
     }
-    cargar()
-    return () => { activo = false }
   }, [router])
+
+  useEffect(() => {
+    let activo = true
+    if (activo) cargar()
+    return () => { activo = false }
+  }, [cargar])
 
   if (cargando) {
     return (
       <main style={{ minHeight: '100dvh', background: 'var(--color-bg)' }}>
         <p style={{ padding: 24, fontSize: 13.5, color: 'var(--color-text-secondary)', fontFamily: F_BODY }}>Cargando…</p>
+      </main>
+    )
+  }
+
+  if (errorCarga) {
+    return (
+      <main style={{ minHeight: '100dvh', background: 'var(--color-bg)' }}>
+        <div style={{ maxWidth: 440, margin: '0 auto', padding: '0 18px', paddingTop: 'max(20px, env(safe-area-inset-top, 0px))' }}>
+          <EstadoError mensaje={errorCarga.message} onReintentar={cargar} />
+        </div>
       </main>
     )
   }

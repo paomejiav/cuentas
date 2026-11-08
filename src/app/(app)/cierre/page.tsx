@@ -357,7 +357,7 @@ function CierreInner() {
   const router = useRouter()
   const params = useSearchParams()
 
-  const [fase, setFase] = useState<'cargando' | 'elegir-grupo' | 'ok'>('cargando')
+  const [fase, setFase] = useState<'cargando' | 'elegir-grupo' | 'ok' | 'error'>('cargando')
   const [grupos, setGrupos] = useState<GrupoOpcion[]>([])
   const [grupoId, setGrupoId] = useState<string | null>(null)
   const [grupoNombre, setGrupoNombre] = useState('')
@@ -383,16 +383,14 @@ function CierreInner() {
   const [pagando, setPagando] = useState<TransferenciaSugerida | null>(null)
   const [toast, setToast] = useState<{ mensaje: string; tipo: 'exito' | 'error' } | null>(null)
 
-  useEffect(() => {
-    let activo = true
-    async function cargar() {
+  const cargarGrupo = useCallback(async () => {
+    setFase('cargando')
+    try {
       const { data: { user } } = await supabase.auth.getUser()
       if (!user) { router.replace('/login'); return }
-      if (!activo) return
       setUsuarioId(user.id)
 
       const resolucion = await resolverGrupoActivo(user.id, params.get('grupo'))
-      if (!activo) return
 
       if (resolucion.estado === 'sin-grupos') { router.replace('/'); return }
       if (resolucion.estado === 'elegir') {
@@ -403,13 +401,19 @@ function CierreInner() {
 
       setGrupoId(resolucion.grupoId)
       const { data: grupo } = await supabase.from('grupos').select('nombre').eq('id', resolucion.grupoId).single()
-      if (!activo) return
       setGrupoNombre(grupo?.nombre ?? '')
       setFase('ok')
+    } catch (e) {
+      setErrorResumen(e instanceof ErrorCarga ? e : new ErrorCarga('inesperado', 'Algo salió mal. Inténtalo de nuevo.', e))
+      setFase('error')
     }
-    cargar()
-    return () => { activo = false }
   }, [router, params])
+
+  useEffect(() => {
+    let activo = true
+    if (activo) cargarGrupo()
+    return () => { activo = false }
+  }, [cargarGrupo])
 
   const cargarResumen = useCallback(async () => {
     if (!grupoId) return
@@ -527,6 +531,16 @@ function CierreInner() {
     return (
       <main style={{ minHeight: '100dvh', background: 'var(--color-bg)' }}>
         <p style={{ padding: 24, fontSize: 13.5, color: 'var(--color-text-secondary)', fontFamily: F_BODY }}>Cargando…</p>
+      </main>
+    )
+  }
+
+  if (fase === 'error') {
+    return (
+      <main style={{ minHeight: '100dvh', background: 'var(--color-bg)' }}>
+        <div style={{ maxWidth: 440, margin: '0 auto', padding: '0 18px', paddingTop: 'max(24px, env(safe-area-inset-top, 0px))' }}>
+          <EstadoError mensaje={errorResumen?.message ?? 'Algo salió mal. Inténtalo de nuevo.'} onReintentar={cargarGrupo} />
+        </div>
       </main>
     )
   }

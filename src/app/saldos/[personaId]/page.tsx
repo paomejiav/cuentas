@@ -1,12 +1,14 @@
 'use client'
 
-import { Suspense, use, useEffect, useState } from 'react'
+import { Suspense, use, useCallback, useEffect, useState } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import Link from 'next/link'
 import { supabase } from '@/lib/supabase'
 import { resolverGrupoActivo, type GrupoOpcion } from '@/lib/grupo-activo'
 import { hrefHomeGrupo } from '@/lib/grupo'
+import { ErrorCarga } from '@/lib/errores-carga'
 import { SaldosConPersona } from '@/components/app/SaldosConPersona'
+import { EstadoError } from '@/components/app/EstadoError'
 
 export default function SaldosConPersonaGrupoPage({ params }: { params: Promise<{ personaId: string }> }) {
   const { personaId } = use(params)
@@ -21,21 +23,20 @@ function SaldosConPersonaGrupoInner({ personaId }: { personaId: string }) {
   const router = useRouter()
   const searchParams = useSearchParams()
 
-  const [fase, setFase] = useState<'cargando' | 'elegir-grupo' | 'ok'>('cargando')
+  const [fase, setFase] = useState<'cargando' | 'elegir-grupo' | 'ok' | 'error'>('cargando')
+  const [errorCarga, setErrorCarga] = useState<ErrorCarga | null>(null)
   const [grupos, setGrupos] = useState<GrupoOpcion[]>([])
   const [usuarioId, setUsuarioId] = useState<string | null>(null)
   const [grupoId, setGrupoId] = useState<string | null>(null)
 
-  useEffect(() => {
-    let activo = true
-    async function cargar() {
+  const cargar = useCallback(async () => {
+    setFase('cargando')
+    try {
       const { data: { user } } = await supabase.auth.getUser()
       if (!user) { router.replace('/login'); return }
-      if (!activo) return
       setUsuarioId(user.id)
 
       const resolucion = await resolverGrupoActivo(user.id, searchParams.get('grupo'))
-      if (!activo) return
 
       if (resolucion.estado === 'sin-grupos') { router.replace('/'); return }
       if (resolucion.estado === 'elegir') {
@@ -46,15 +47,32 @@ function SaldosConPersonaGrupoInner({ personaId }: { personaId: string }) {
 
       setGrupoId(resolucion.grupoId)
       setFase('ok')
+    } catch (e) {
+      setErrorCarga(e instanceof ErrorCarga ? e : new ErrorCarga('inesperado', 'Algo salió mal. Inténtalo de nuevo.', e))
+      setFase('error')
     }
-    cargar()
-    return () => { activo = false }
   }, [router, searchParams])
+
+  useEffect(() => {
+    let activo = true
+    if (activo) cargar()
+    return () => { activo = false }
+  }, [cargar])
 
   if (fase === 'cargando') {
     return (
       <main style={{ minHeight: '100dvh', background: 'var(--color-bg)' }}>
         <p style={{ padding: 24, fontSize: 13.5, color: 'var(--color-text-secondary)', fontFamily: 'var(--font-dm-sans), sans-serif' }}>Cargando…</p>
+      </main>
+    )
+  }
+
+  if (fase === 'error') {
+    return (
+      <main style={{ minHeight: '100dvh', background: 'var(--color-bg)' }}>
+        <div style={{ maxWidth: 440, margin: '0 auto', padding: '0 18px', paddingTop: 'max(20px, env(safe-area-inset-top, 0px))' }}>
+          <EstadoError mensaje={errorCarga?.message ?? 'Algo salió mal. Inténtalo de nuevo.'} onReintentar={cargar} />
+        </div>
       </main>
     )
   }

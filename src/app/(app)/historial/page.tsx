@@ -17,14 +17,14 @@ import {
 } from '@/lib/historial'
 import { CATEGORIA_EMOJI, METODO_LABEL } from '@/types/database'
 import { formatCLP } from '@/lib/format'
-import { ErrorCarga } from '@/lib/errores-carga'
+import { leer, ErrorCarga } from '@/lib/errores-carga'
 import { Avatar } from '@/components/app/Avatar'
 import { AvatarGrupo } from '@/components/app/AvatarGrupo'
 import { ChipGrupo } from '@/components/app/ChipGrupo'
 import { SelectorGrupoSheet } from '@/components/app/SelectorGrupoSheet'
 import { FlujoCrearUnirseGrupo } from '@/components/app/FlujoCrearUnirseGrupo'
 import { BottomNav } from '@/components/app/BottomNav'
-import { EstadoError } from '@/components/app/EstadoError'
+import { EstadoError, EstadoErrorCompacto } from '@/components/app/EstadoError'
 
 const F_HEAD = 'var(--font-sora), sans-serif'
 const F_BODY = 'var(--font-dm-sans), sans-serif'
@@ -218,6 +218,7 @@ function HistorialInner() {
   const [gastos, setGastos] = useState<GastoHistorial[]>([])
   const [pagos, setPagos] = useState<PagoHistorial[]>([])
   const [cargandoDatos, setCargandoDatos] = useState(true)
+  const [datosError, setDatosError] = useState<ErrorCarga | null>(null)
 
   // Alcance "personal" — tanto el de la vista Personal de "Todos los
   // grupos" como la entrada directa ?tab=personal, mismos datos y misma
@@ -228,12 +229,20 @@ function HistorialInner() {
   const [pagosPersonal, setPagosPersonal] = useState<PagoHistorial[]>([])
   const [personalCargado, setPersonalCargado] = useState(false)
   const [cargandoPersonal, setCargandoPersonal] = useState(false)
+  const [personalError, setPersonalError] = useState<ErrorCarga | null>(null)
 
   // "Todos los grupos" + alcance "todo" — movimientos de todos los grupos
   // activos mezclados con lo personal, cada uno con su etiqueta de origen.
   const [itemsMixtos, setItemsMixtos] = useState<Item[]>([])
   const [mixtoCargado, setMixtoCargado] = useState(false)
   const [cargandoMixto, setCargandoMixto] = useState(false)
+  // Si falla lo personal dentro de "todo", no hay nada parcial que mostrar
+  // (es un solo bloque) — se trata como fallo total, mixtoCargado NO se
+  // marca, para que Reintentar vuelva a pedir todo de nuevo. Si falla SOLO
+  // algún grupo, sí queda "cargado" (lo demás sí sirve) y gruposConErrorMixto
+  // guarda cuáles, para el aviso compacto con su propio Reintentar.
+  const [mixtoErrorTotal, setMixtoErrorTotal] = useState<ErrorCarga | null>(null)
+  const [gruposConErrorMixto, setGruposConErrorMixto] = useState<Set<string>>(new Set())
 
   const [tipoFiltro, setTipoFiltro] = useState<TipoFiltro>('todo')
   const [mostrarFiltro, setMostrarFiltro] = useState(false)
@@ -290,24 +299,23 @@ function HistorialInner() {
     return () => { activo = false }
   }, [cargar])
 
-  useEffect(() => {
-    if (fase !== 'ok' || seleccion.tipo !== 'grupo') return
-    const grupoId = seleccion.grupoId
-    let activo = true
-    async function cargarDatos() {
-      setCargandoDatos(true)
-      const [listaCuentas, { data: miembros }, historial] = await Promise.all([
-        listarCuentasActivasGrupo(grupoId!),
-        supabase.from('grupo_miembros').select('usuarios ( id, nombre, avatar_color )').eq('grupo_id', grupoId!),
-        obtenerHistorialGrupo(grupoId!),
+  const cargarDatosGrupo = useCallback(async (idGrupo: string) => {
+    setCargandoDatos(true)
+    try {
+      const [listaCuentas, miembros, historial] = await Promise.all([
+        listarCuentasActivasGrupo(idGrupo),
+        leer(
+          supabase.from('grupo_miembros').select('usuarios ( id, nombre, avatar_color )').eq('grupo_id', idGrupo),
+          'historial/grupo_miembros'
+        ),
+        obtenerHistorialGrupo(idGrupo),
       ])
-      if (!activo) return
       const listaPersonas = ((miembros ?? []) as unknown as { usuarios: UsuarioMini | null }[]).map(f => f.usuarios).filter((u): u is UsuarioMini => !!u)
       setCuentas(listaCuentas)
       setPersonas(listaPersonas)
       setGastos(historial.gastos)
       setPagos(historial.pagos)
-      setCargandoDatos(false)
+      setDatosError(null)
 
       // Preselección de personas vía ?personas=id1,id2 (ej. desde "Ver los
       // gastos de esta cadena" en Cierre) — solo en la carga inicial, para no
@@ -323,8 +331,18 @@ function HistorialInner() {
           setFiltroDraft(filtroInicial)
         }
       }
+    } catch (e) {
+      setDatosError(e instanceof ErrorCarga ? e : new ErrorCarga('inesperado', 'Algo salió mal. Inténtalo de nuevo.', e))
+    } finally {
+      setCargandoDatos(false)
     }
-    cargarDatos()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [params])
+
+  useEffect(() => {
+    if (fase !== 'ok' || seleccion.tipo !== 'grupo') return
+    let activo = true
+    if (activo) cargarDatosGrupo(seleccion.grupoId)
     return () => { activo = false }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [fase, seleccion])
@@ -343,54 +361,91 @@ function HistorialInner() {
   useEffect(() => {
     setPersonalCargado(false)
     setMixtoCargado(false)
+    setPersonalError(null)
+    setMixtoErrorTotal(null)
+    setGruposConErrorMixto(new Set())
   }, [seleccion])
 
-  // Carga perezosa de lo personal — recién la primera vez que se entra ahí
-  // (vista Personal del segmentado, o ?tab=personal). Exige fase==='ok' para
-  // no disparar con usuarioId ya listo pero gruposActivos/seleccion todavía
-  // en su valor inicial (setUsuarioId comita antes que el resto del estado
-  // de la carga principal).
-  useEffect(() => {
-    if (fase !== 'ok' || !enPersonal || personalCargado || !usuarioId) return
-    let activo = true
+  // Carga de lo personal — vista Personal del segmentado, o ?tab=personal.
+  // Si falla, personalCargado NO se marca — la próxima vez que se entre a
+  // este modo (o al tocar Reintentar) vuelve a pedir datos frescos de
+  // verdad, no un "ya cargado" falso.
+  const cargarPersonal = useCallback(async (uid: string) => {
     setCargandoPersonal(true)
-    Promise.all([obtenerHistorialPersonal(usuarioId), listarContactosCompartidos(usuarioId)]).then(([historial, listaContactos]) => {
-      if (!activo) return
+    try {
+      const [historial, listaContactos] = await Promise.all([
+        obtenerHistorialPersonal(uid),
+        listarContactosCompartidos(uid),
+      ])
       setGastosPersonal(historial.gastos)
       setPagosPersonal(historial.pagos)
       setContactos(listaContactos)
       setPersonalCargado(true)
+      setPersonalError(null)
+    } catch (e) {
+      setPersonalError(e instanceof ErrorCarga ? e : new ErrorCarga('inesperado', 'Algo salió mal. Inténtalo de nuevo.', e))
+    } finally {
       setCargandoPersonal(false)
-    })
-    return () => { activo = false }
-  }, [fase, enPersonal, personalCargado, usuarioId])
+    }
+  }, [])
+
+  // Carga perezosa de lo personal — recién la primera vez que se entra ahí.
+  // Exige fase==='ok' para no disparar con usuarioId ya listo pero
+  // gruposActivos/seleccion todavía en su valor inicial (setUsuarioId comita
+  // antes que el resto del estado de la carga principal).
+  useEffect(() => {
+    if (fase !== 'ok' || !enPersonal || personalCargado || !usuarioId) return
+    cargarPersonal(usuarioId)
+  }, [fase, enPersonal, personalCargado, usuarioId, cargarPersonal])
 
   // "Todos los grupos" + alcance "todo" — un gasto/pago por cada grupo
   // activo en paralelo, más lo personal, mezclados y etiquetados por origen.
-  useEffect(() => {
-    if (fase !== 'ok' || !enMixto || mixtoCargado || !usuarioId) return
-    let activo = true
+  // Un grupo que falla no borra los demás (allSettled) y queda marcado en
+  // gruposConErrorMixto con su propio aviso + Reintentar; si falla lo
+  // personal (es un solo bloque, no hay nada parcial que mostrar de ahí) se
+  // trata como fallo total: mixtoCargado NO se marca, para que la próxima
+  // vez (o Reintentar) vuelva a pedir todo de verdad.
+  const cargarMixto = useCallback(async (uid: string, listaGrupos: GrupoOpcion[]) => {
     setCargandoMixto(true)
-    Promise.all([
-      Promise.all(gruposActivos.map(g => obtenerHistorialGrupo(g.id).then(h => ({ g, h })))),
-      obtenerHistorialPersonal(usuarioId),
-      listarContactosCompartidos(usuarioId),
-    ]).then(([porGrupo, personalHist, listaContactos]) => {
-      if (!activo) return
+    try {
+      const [porGrupoR, personalHist] = await Promise.all([
+        Promise.allSettled(listaGrupos.map(g => obtenerHistorialGrupo(g.id).then(h => ({ g, h })))),
+        obtenerHistorialPersonal(uid),
+      ])
+      const listaContactos = await listarContactosCompartidos(uid)
+
       const items: Item[] = []
-      for (const { g, h } of porGrupo) {
-        for (const x of h.gastos) items.push({ tipo: 'gasto', fecha: x.fecha, creado_en: x.creado_en, gasto: x, grupoTag: { id: g.id, nombre: g.nombre } })
-        for (const x of h.pagos) items.push({ tipo: 'pago', fecha: x.fecha, creado_en: x.creado_en, pago: x, grupoTag: { id: g.id, nombre: g.nombre } })
-      }
+      const errores = new Set<string>()
+      porGrupoR.forEach((r, i) => {
+        if (r.status === 'fulfilled') {
+          const { g, h } = r.value
+          for (const x of h.gastos) items.push({ tipo: 'gasto', fecha: x.fecha, creado_en: x.creado_en, gasto: x, grupoTag: { id: g.id, nombre: g.nombre } })
+          for (const x of h.pagos) items.push({ tipo: 'pago', fecha: x.fecha, creado_en: x.creado_en, pago: x, grupoTag: { id: g.id, nombre: g.nombre } })
+        } else {
+          errores.add(listaGrupos[i].id)
+        }
+      })
       for (const x of personalHist.gastos) items.push({ tipo: 'gasto', fecha: x.fecha, creado_en: x.creado_en, gasto: x, grupoTag: null })
       for (const x of personalHist.pagos) items.push({ tipo: 'pago', fecha: x.fecha, creado_en: x.creado_en, pago: x, grupoTag: null })
+
       setItemsMixtos(items)
       setContactos(listaContactos)
+      setGruposConErrorMixto(errores)
+      setMixtoErrorTotal(null)
       setMixtoCargado(true)
+    } catch (e) {
+      // Lo personal (o listarContactosCompartidos) falló — no hay un
+      // resultado parcial razonable que mostrar, se trata como fallo total.
+      setMixtoErrorTotal(e instanceof ErrorCarga ? e : new ErrorCarga('inesperado', 'Algo salió mal. Inténtalo de nuevo.', e))
+    } finally {
       setCargandoMixto(false)
-    })
-    return () => { activo = false }
-  }, [fase, enMixto, mixtoCargado, usuarioId, gruposActivos])
+    }
+  }, [])
+
+  useEffect(() => {
+    if (fase !== 'ok' || !enMixto || mixtoCargado || !usuarioId) return
+    cargarMixto(usuarioId, gruposActivos)
+  }, [fase, enMixto, mixtoCargado, usuarioId, gruposActivos, cargarMixto])
 
   const itemsCombinados = useMemo<Item[]>(() => {
     if (enMixto) return [...itemsMixtos].sort((a, b) => b.fecha.localeCompare(a.fecha) || b.creado_en.localeCompare(a.creado_en))
@@ -625,8 +680,27 @@ function HistorialInner() {
           </div>
         )}
 
+        {enMixto && !mixtoErrorTotal && gruposConErrorMixto.size > 0 && (
+          <div style={{ marginBottom: 14 }}>
+            <EstadoErrorCompacto
+              mensaje={`No se pudieron cargar los movimientos de ${gruposConErrorMixto.size} grupo${gruposConErrorMixto.size === 1 ? '' : 's'}.`}
+              onReintentar={() => usuarioId && cargarMixto(usuarioId, gruposActivos)}
+            />
+          </div>
+        )}
+
         {(enPersonal ? cargandoPersonal : enMixto ? cargandoMixto : cargandoDatos) ? (
           <p style={{ fontSize: 13.5, color: 'var(--color-text-secondary)', fontFamily: F_BODY }}>Cargando…</p>
+        ) : (enPersonal ? personalError : enMixto ? mixtoErrorTotal : datosError) ? (
+          <EstadoError
+            mensaje={(enPersonal ? personalError : enMixto ? mixtoErrorTotal : datosError)?.message ?? 'Algo salió mal. Inténtalo de nuevo.'}
+            onReintentar={() => {
+              if (!usuarioId) return
+              if (enPersonal) cargarPersonal(usuarioId)
+              else if (enMixto) cargarMixto(usuarioId, gruposActivos)
+              else if (grupoId) cargarDatosGrupo(grupoId)
+            }}
+          />
         ) : itemsFiltrados.length === 0 ? (
           <div style={{ background: 'var(--color-surface-white)', border: '1px solid var(--color-border)', borderRadius: 18, padding: '32px 20px', textAlign: 'center' }}>
             <div style={{ fontSize: 32, marginBottom: 8 }}>🧾</div>

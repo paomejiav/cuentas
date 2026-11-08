@@ -1,6 +1,7 @@
 import { supabase } from '@/lib/supabase'
 import type { Categoria, MetodoPago } from '@/types/database'
 import { etiquetaHoyAyerSantiago, formatearFechaCortaSantiago, type UsuarioMini } from '@/lib/cuentas'
+import { leer } from '@/lib/errores-carga'
 
 // ── Tipos ─────────────────────────────────────────────────────
 
@@ -40,28 +41,34 @@ export async function obtenerHistorialGrupo(grupoId: string): Promise<{
   gastos: GastoHistorial[]
   pagos: PagoHistorial[]
 }> {
-  const [{ data: gastosData }, { data: pagosData }] = await Promise.all([
-    supabase
-      .from('gastos')
-      .select(`
-        id, descripcion, monto_total, categoria, fecha, creado_en, cuenta_id, pagado_por,
-        cuentas ( nombre ),
-        usuarios!gastos_pagado_por_fkey ( id, nombre, avatar_color ),
-        divisiones ( monto_asignado, usuario_id, usuarios ( id, nombre, avatar_color ) )
-      `)
-      .eq('grupo_id', grupoId)
-      .order('fecha', { ascending: false })
-      .order('creado_en', { ascending: false }),
-    supabase
-      .from('pagos')
-      .select(`
-        id, monto, fecha, metodo, creado_en, de_usuario_id, a_usuario_id,
-        de:usuarios!pagos_de_usuario_id_fkey ( id, nombre, avatar_color ),
-        a:usuarios!pagos_a_usuario_id_fkey ( id, nombre, avatar_color )
-      `)
-      .eq('grupo_id', grupoId)
-      .order('fecha', { ascending: false })
-      .order('creado_en', { ascending: false }),
+  const [gastosData, pagosData] = await Promise.all([
+    leer(
+      supabase
+        .from('gastos')
+        .select(`
+          id, descripcion, monto_total, categoria, fecha, creado_en, cuenta_id, pagado_por,
+          cuentas ( nombre ),
+          usuarios!gastos_pagado_por_fkey ( id, nombre, avatar_color ),
+          divisiones ( monto_asignado, usuario_id, usuarios ( id, nombre, avatar_color ) )
+        `)
+        .eq('grupo_id', grupoId)
+        .order('fecha', { ascending: false })
+        .order('creado_en', { ascending: false }),
+      'obtenerHistorialGrupo/gastos'
+    ),
+    leer(
+      supabase
+        .from('pagos')
+        .select(`
+          id, monto, fecha, metodo, creado_en, de_usuario_id, a_usuario_id,
+          de:usuarios!pagos_de_usuario_id_fkey ( id, nombre, avatar_color ),
+          a:usuarios!pagos_a_usuario_id_fkey ( id, nombre, avatar_color )
+        `)
+        .eq('grupo_id', grupoId)
+        .order('fecha', { ascending: false })
+        .order('creado_en', { ascending: false }),
+      'obtenerHistorialGrupo/pagos'
+    ),
   ])
 
   type FilaGasto = {
@@ -133,28 +140,34 @@ export async function obtenerHistorialPersonal(usuarioId: string): Promise<{
   gastos: GastoHistorial[]
   pagos: PagoHistorial[]
 }> {
-  const [{ data: gastosData }, { data: pagosData }] = await Promise.all([
-    supabase
-      .from('gastos')
-      .select(`
-        id, descripcion, monto_total, categoria, fecha, creado_en, cuenta_id, pagado_por,
-        usuarios!gastos_pagado_por_fkey ( id, nombre, avatar_color ),
-        divisiones ( monto_asignado, usuario_id, usuarios ( id, nombre, avatar_color ) )
-      `)
-      .is('grupo_id', null)
-      .order('fecha', { ascending: false })
-      .order('creado_en', { ascending: false }),
-    supabase
-      .from('pagos')
-      .select(`
-        id, monto, fecha, metodo, creado_en, de_usuario_id, a_usuario_id,
-        de:usuarios!pagos_de_usuario_id_fkey ( id, nombre, avatar_color ),
-        a:usuarios!pagos_a_usuario_id_fkey ( id, nombre, avatar_color )
-      `)
-      .is('grupo_id', null)
-      .or(`de_usuario_id.eq.${usuarioId},a_usuario_id.eq.${usuarioId}`)
-      .order('fecha', { ascending: false })
-      .order('creado_en', { ascending: false }),
+  const [gastosData, pagosData] = await Promise.all([
+    leer(
+      supabase
+        .from('gastos')
+        .select(`
+          id, descripcion, monto_total, categoria, fecha, creado_en, cuenta_id, pagado_por,
+          usuarios!gastos_pagado_por_fkey ( id, nombre, avatar_color ),
+          divisiones ( monto_asignado, usuario_id, usuarios ( id, nombre, avatar_color ) )
+        `)
+        .is('grupo_id', null)
+        .order('fecha', { ascending: false })
+        .order('creado_en', { ascending: false }),
+      'obtenerHistorialPersonal/gastos'
+    ),
+    leer(
+      supabase
+        .from('pagos')
+        .select(`
+          id, monto, fecha, metodo, creado_en, de_usuario_id, a_usuario_id,
+          de:usuarios!pagos_de_usuario_id_fkey ( id, nombre, avatar_color ),
+          a:usuarios!pagos_a_usuario_id_fkey ( id, nombre, avatar_color )
+        `)
+        .is('grupo_id', null)
+        .or(`de_usuario_id.eq.${usuarioId},a_usuario_id.eq.${usuarioId}`)
+        .order('fecha', { ascending: false })
+        .order('creado_en', { ascending: false }),
+      'obtenerHistorialPersonal/pagos'
+    ),
   ])
 
   type FilaGastoSinCuenta = {

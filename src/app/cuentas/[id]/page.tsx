@@ -45,6 +45,11 @@ export default function DetalleCuentaPage({ params }: { params: Promise<{ id: st
   const [disponibles, setDisponibles] = useState<MiembroGrupoMini[]>([])
   const [seleccionados, setSeleccionados] = useState<Set<string>>(new Set())
   const [agregando, setAgregando] = useState(false)
+  // Nombres de quienes NO se pudieron agregar en el último intento — si hay
+  // alguno, la hoja queda abierta (nunca se cierra como si hubiera salido
+  // todo bien) y "seleccionados" queda acotado solo a esas personas, para
+  // que el mismo botón reintente solo con ellas.
+  const [erroresAgregar, setErroresAgregar] = useState<string[]>([])
 
   const [gastoAbierto, setGastoAbierto] = useState<string | null>(null)
   const [enlaceCopiado, setEnlaceCopiado] = useState(false)
@@ -127,6 +132,7 @@ export default function DetalleCuentaPage({ params }: { params: Promise<{ id: st
     const lista = await listarMiembrosGrupoParaCuenta(cuenta.grupo_id, cuenta.id, usuarioId)
     setDisponibles(lista.filter(m => !m.yaEsMiembroCuenta))
     setSeleccionados(new Set())
+    setErroresAgregar([])
     setMostrarAgregar(true)
   }
 
@@ -153,15 +159,38 @@ export default function DetalleCuentaPage({ params }: { params: Promise<{ id: st
   async function confirmarAgregar() {
     if (!cuenta || seleccionados.size === 0) return
     setAgregando(true)
-    try {
-      for (const idm of seleccionados) {
-        await supabase.rpc('agregar_miembro_cuenta', { p_cuenta_id: cuenta.id, p_usuario_id: idm })
-      }
-      setMostrarAgregar(false)
-      if (usuarioId) await cargarTodo(cuenta.id, usuarioId)
-    } finally {
-      setAgregando(false)
+    setErroresAgregar([])
+
+    const nombrePorId = new Map(disponibles.map(m => [m.id, m.nombre]))
+    const exitosos: string[] = []
+    const fallidos: string[] = []
+
+    for (const idm of seleccionados) {
+      const { error } = await supabase.rpc('agregar_miembro_cuenta', { p_cuenta_id: cuenta.id, p_usuario_id: idm })
+      if (error) fallidos.push(idm)
+      else exitosos.push(idm)
     }
+
+    // Recarga igual lo que sí se agregó, aunque algo haya fallado — los
+    // que entraron bien tienen que verse reflejados ya mismo.
+    if (usuarioId) await cargarTodo(cuenta.id, usuarioId)
+
+    if (fallidos.length === 0) {
+      setMostrarAgregar(false)
+      setSeleccionados(new Set())
+      setDisponibles([])
+      setErroresAgregar([])
+    } else {
+      // Los que sí se agregaron ya son miembros — se sacan de "disponibles"
+      // sin otra consulta (ya sabemos sus ids). Seleccionados queda
+      // acotado a los que fallaron, para que el mismo botón reintente solo
+      // con ellos.
+      setDisponibles(prev => prev.filter(m => !exitosos.includes(m.id)))
+      setSeleccionados(new Set(fallidos))
+      setErroresAgregar(fallidos.map(id => nombrePorId.get(id) ?? 'alguien'))
+    }
+
+    setAgregando(false)
   }
 
   if (estado === 'cargando') {
@@ -358,10 +387,19 @@ export default function DetalleCuentaPage({ params }: { params: Promise<{ id: st
                 })}
               </div>
             )}
+
+            {erroresAgregar.length > 0 && (
+              <div style={{ marginTop: 10, borderRadius: 12, padding: '10px 12px', background: 'var(--color-negative-tint)' }}>
+                <p style={{ margin: 0, fontSize: 12.5, color: 'var(--color-negative)', fontFamily: F_BODY, lineHeight: 1.4 }}>
+                  No se pudo agregar a {erroresAgregar.join(', ')}. {erroresAgregar.length === 1 ? 'Sigue seleccionado' : 'Siguen seleccionados'} para que puedas reintentar.
+                </p>
+              </div>
+            )}
+
             <div style={{ display: 'flex', gap: 8, marginTop: 12 }}>
               <button
                 type="button"
-                onClick={() => setMostrarAgregar(false)}
+                onClick={() => { setMostrarAgregar(false); setErroresAgregar([]) }}
                 style={{ flex: 1, height: 38, borderRadius: 11, border: '1px solid var(--color-border)', background: 'var(--color-surface-white)', color: 'var(--color-text-primary)', fontSize: 13, fontWeight: 700, cursor: 'pointer', fontFamily: F_BODY }}
               >
                 Cancelar
@@ -376,7 +414,7 @@ export default function DetalleCuentaPage({ params }: { params: Promise<{ id: st
                   opacity: seleccionados.size === 0 || agregando ? 0.5 : 1,
                 }}
               >
-                {agregando ? 'Agregando…' : 'Agregar'}
+                {agregando ? 'Agregando…' : erroresAgregar.length > 0 ? 'Reintentar' : 'Agregar'}
               </button>
             </div>
           </div>

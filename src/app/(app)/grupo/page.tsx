@@ -5,7 +5,8 @@ import { useRouter, useSearchParams } from 'next/navigation'
 import Link from 'next/link'
 import { supabase } from '@/lib/supabase'
 import { resolverGrupoActivo, type GrupoOpcion } from '@/lib/grupo-activo'
-import { hrefHomeGrupo, obtenerDetalleGrupo, actualizarNombreGrupo, salirDeGrupo, cambiarRolMiembro, sacarMiembro, type DetalleGrupo, type IntegranteActivo } from '@/lib/grupo'
+import { hrefHomeGrupo, hrefUnirseGrupo, obtenerDetalleGrupo, actualizarNombreGrupo, salirDeGrupo, cambiarRolMiembro, sacarMiembro, type DetalleGrupo, type IntegranteActivo } from '@/lib/grupo'
+import { compartirOCopiar } from '@/lib/compartir'
 import { mesEnMinusculas } from '@/lib/format'
 import { ErrorCarga } from '@/lib/errores-carga'
 import { Avatar } from '@/components/app/Avatar'
@@ -242,11 +243,15 @@ function GrupoPageInner() {
     }
   }
 
-  async function handleCopiarCodigo() {
+  async function handleCompartirInvitacion() {
     if (!detalle) return
-    await navigator.clipboard.writeText(detalle.codigo_invitacion)
-    setCopiado(true)
-    setTimeout(() => setCopiado(false), 2000)
+    const url = `${window.location.origin}${hrefUnirseGrupo(detalle.codigo_invitacion)}`
+    const texto = `Únete a mi grupo «${detalle.nombre}»: ${url}`
+    const copiado = await compartirOCopiar({ title: 'Better than Split', text: texto, url })
+    if (copiado) {
+      setCopiado(true)
+      setTimeout(() => setCopiado(false), 2000)
+    }
   }
 
   function handleClickSalir() {
@@ -567,8 +572,8 @@ function GrupoPageInner() {
             </div>
             <button
               type="button"
-              onClick={handleCopiarCodigo}
-              aria-label="Copiar código"
+              onClick={handleCompartirInvitacion}
+              aria-label="Compartir invitación"
               style={{
                 width: 50, height: 50, borderRadius: 14, background: 'var(--gradient-cta)',
                 display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0,

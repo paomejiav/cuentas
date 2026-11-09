@@ -3,6 +3,7 @@
 import { useState } from 'react'
 import { supabase } from '@/lib/supabase'
 import { compartirOCopiar } from '@/lib/compartir'
+import { hrefUnirseGrupo } from '@/lib/grupo'
 
 const F_HEAD = 'var(--font-sora), sans-serif'
 const F_BODY = 'var(--font-dm-sans), sans-serif'
@@ -238,8 +239,9 @@ export function FlujoCrearUnirseGrupo({ pasoInicial, onCerrar, onListo }: FlujoC
 
   async function handleCompartir() {
     if (!grupoConfirmado) return
-    const texto = `Sumate a "${grupoConfirmado.nombre}" en Better than Split con el código ${grupoConfirmado.codigo_invitacion}`
-    const copiado = await compartirOCopiar({ title: 'Better than Split', text: texto })
+    const url = `${window.location.origin}${hrefUnirseGrupo(grupoConfirmado.codigo_invitacion)}`
+    const texto = `Únete a mi grupo «${grupoConfirmado.nombre}»: ${url}`
+    const copiado = await compartirOCopiar({ title: 'Better than Split', text: texto, url })
     if (copiado) {
       setCompartido(true)
       setTimeout(() => setCompartido(false), 2000)

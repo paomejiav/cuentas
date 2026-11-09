@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState, useMemo } from 'react'
+import { useEffect, useState, useMemo, useRef } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import {
   editarGasto, validarPaso1, validarPaso2, calcularMontosPorPersona, listarParticipantesPosibles,
@@ -51,6 +51,18 @@ function focusInput(e: React.FocusEvent<HTMLInputElement | HTMLTextAreaElement>)
 }
 function blurInput(e: React.FocusEvent<HTMLInputElement | HTMLTextAreaElement>) {
   e.target.style.borderColor = 'var(--color-border)'
+}
+
+// Reparto automático de Porcentajes: floor(100/n) para todos, y el resto
+// (100 mod n) se reparte de a un punto entre las primeras r personas — así
+// la diferencia máxima entre cualquier par es de 1 punto y la suma sigue
+// dando 100 exacto. Igual que en NuevoGastoScreen.
+function repartoPorcentajeInicial(participantes: string[]): DivisionInput[] {
+  const n = participantes.length
+  if (n === 0) return []
+  const base = Math.floor(100 / n)
+  const resto = 100 - base * n
+  return participantes.map((id, i) => ({ usuario_id: id, valor: i < resto ? base + 1 : base }))
 }
 
 // ── Tipos locales (modelo nuevo: usuario_id, cuenta_id opcional) ──
@@ -160,8 +172,20 @@ export default function EditarGastoPage() {
   const [nota, setNota] = useState('')
 
   const [participantes, setParticipantes] = useState<string[]>([])
+  // Siempre arranca en "Exactos": es la única pestaña que puede mostrar los
+  // montos tal cual quedaron guardados (ver nota en manualIds más abajo).
+  // tipo_division no se persiste en la base — no hay forma de saber si el
+  // gasto se creó en Partes iguales o Porcentajes, así que abrir y guardar
+  // sin tocar nada tiene que funcionar igual sea cual sea el origen.
   const [tipoDivision, setTipoDivision] = useState<TipoDivision>('exacto')
-  const [divisionValues, setDivisionValues] = useState<DivisionInput[]>([])
+  // Quién escribió su valor a mano (manual) vs. a quién se le rellena solo
+  // (automático) — igual que en NuevoGastoScreen. Al cargar el gasto, TODAS
+  // las divisiones existentes se marcan manuales con su monto real: así se
+  // ven los valores guardados (no un placeholder) y "Guardar cambios" sin
+  // tocar nada no cambia ningún monto.
+  const [manualIds, setManualIds] = useState<Set<string>>(new Set())
+  const [textos, setTextos] = useState<Record<string, string>>({})
+  const tipoDivisionAnteriorRef = useRef<TipoDivision>('exacto')
   // Si el gasto ya tiene alguna división saldada o con pagos vinculados, no
   // se puede tocar monto/pagador/participantes/tipo de división — igual se
   // bloquea en editarGasto() aunque este chequeo fallara o se saltara. Ante
@@ -218,13 +242,85 @@ export default function EditarGastoPage() {
 
       const divisiones = (divs as DivisionRow[]) ?? []
       setParticipantes(divisiones.map(d => d.usuario_id))
-      setDivisionValues(divisiones.map(d => ({ usuario_id: d.usuario_id, valor: d.monto_asignado })))
+      setManualIds(new Set(divisiones.map(d => d.usuario_id)))
+      setTextos(Object.fromEntries(divisiones.map(d => [d.usuario_id, String(d.monto_asignado)])))
       setPersonas(listaPersonas)
       setCargando(false)
     }
     cargar()
     return () => { activo = false }
   }, [id, router])
+
+  // Al cambiar de PESTAÑA (tipoDivision): nadie es manual todavía — se
+  // pierden los valores que traía (incluidos los recién cargados desde la
+  // base, si esta es la primera vez que el usuario toca la pestaña). Al
+  // cambiar solo los PARTICIPANTES (misma pestaña): conservo quién sigue
+  // siendo manual (y su texto); quien sale pierde su valor; quien entra
+  // queda automático. Igual que en NuevoGastoScreen.
+  useEffect(() => {
+    const cambioDeTipo = tipoDivisionAnteriorRef.current !== tipoDivision
+    tipoDivisionAnteriorRef.current = tipoDivision
+
+    if (cambioDeTipo) {
+      setManualIds(new Set())
+      setTextos({})
+      return
+    }
+
+    setManualIds(prev => {
+      const next = new Set<string>()
+      prev.forEach(id => { if (participantes.includes(id)) next.add(id) })
+      return next
+    })
+    setTextos(prev => {
+      const next: Record<string, string> = {}
+      participantes.forEach(id => { if (prev[id] !== undefined) next[id] = prev[id] })
+      return next
+    })
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [participantes, tipoDivision])
+
+  // divisionValues: derivado de quién es manual (y lo que escribió) más el
+  // autorrelleno de las automáticas. Nunca es estado propio — se recalcula
+  // en cada render, así siempre está al día con lo que se ve y es
+  // exactamente lo que se valida y se guarda. Igual que en NuevoGastoScreen.
+  const divisionValues = useMemo<DivisionInput[]>(() => {
+    if (tipoDivision === 'igual') {
+      return participantes.map(id => ({ usuario_id: id, valor: 0 }))
+    }
+
+    if (manualIds.size === 0) {
+      return tipoDivision === 'porcentaje'
+        ? repartoPorcentajeInicial(participantes)
+        : participantes.map(id => ({ usuario_id: id, valor: 0 }))
+    }
+
+    const total = tipoDivision === 'porcentaje' ? 100 : monto
+    const manualVal: Record<string, number> = {}
+    participantes.forEach(id => {
+      if (manualIds.has(id)) manualVal[id] = parseInt(textos[id] || '0', 10) || 0
+    })
+    const sumaManual = participantes.reduce((s, id) => s + (manualVal[id] ?? 0), 0)
+    const automaticos = participantes.filter(id => !manualIds.has(id))
+    const faltante = total - sumaManual
+
+    if (automaticos.length === 0 || faltante <= 0) {
+      return participantes.map(id => ({
+        usuario_id: id,
+        valor: manualIds.has(id) ? manualVal[id] : 0,
+      }))
+    }
+
+    const base = Math.floor(faltante / automaticos.length)
+    const resto = faltante - base * automaticos.length
+    let i = 0
+    return participantes.map(id => {
+      if (manualIds.has(id)) return { usuario_id: id, valor: manualVal[id] }
+      const valor = i < resto ? base + 1 : base
+      i++
+      return { usuario_id: id, valor }
+    })
+  }, [participantes, tipoDivision, manualIds, textos, monto])
 
   const preview = useMemo(() => {
     if (monto <= 0 || participantes.length === 0) return {}
@@ -235,26 +331,38 @@ export default function EditarGastoPage() {
   const cuadrado = tipoDivision === 'porcentaje' ? sumaValores === 100 : sumaValores === monto
 
   function toggleParticipante(pid: string) {
-    setParticipantes(prev => {
-      const next = prev.includes(pid) ? prev.filter(p => p !== pid) : [...prev, pid]
-      setDivisionValues(prevVals => {
-        if (prev.includes(pid)) return prevVals.filter(d => d.usuario_id !== pid)
-        return [...prevVals, { usuario_id: pid, valor: 0 }]
+    setParticipantes(prev => (prev.includes(pid) ? prev.filter(p => p !== pid) : [...prev, pid]))
+  }
+
+  // Un campo vacío vuelve a ser automático; cualquier otro texto (incluido
+  // "0") marca a la persona como manual con ese valor. Igual que en
+  // NuevoGastoScreen.
+  function handleDivisionInputChange(id: string, valorCrudo: string) {
+    const digitos = valorCrudo.replace(/\D/g, '')
+    if (digitos === '') {
+      setManualIds(prev => {
+        if (!prev.has(id)) return prev
+        const next = new Set(prev)
+        next.delete(id)
+        return next
       })
-      return next
-    })
-  }
-
-  function cambiarTipoDivision(t: TipoDivision) {
-    setTipoDivision(t)
-    setDivisionValues(participantes.map(pid => ({
-      usuario_id: pid,
-      valor: t === 'porcentaje' ? Math.round(100 / (participantes.length || 1)) : 0,
-    })))
-  }
-
-  function setDivisionValor(pid: string, valor: number) {
-    setDivisionValues(prev => prev.map(d => d.usuario_id === pid ? { ...d, valor } : d))
+      setTextos(prev => {
+        if (!(id in prev)) return prev
+        const { [id]: _omitido, ...resto } = prev
+        return resto
+      })
+      return
+    }
+    if (participantes.length === 2) {
+      // Con exactamente dos personas el total determina a la otra: nunca
+      // hay dos manuales a la vez — la última editada manda, la otra
+      // vuelve a ser el complemento automático.
+      setManualIds(new Set([id]))
+      setTextos({ [id]: digitos })
+      return
+    }
+    setManualIds(prev => (prev.has(id) ? prev : new Set(prev).add(id)))
+    setTextos(prev => ({ ...prev, [id]: digitos }))
   }
 
   function handleSiguiente() {
@@ -511,7 +619,7 @@ export default function EditarGastoPage() {
                   return (
                     <button
                       key={t.id}
-                      onClick={() => !tienePagos && cambiarTipoDivision(t.id)}
+                      onClick={() => !tienePagos && setTipoDivision(t.id)}
                       disabled={tienePagos}
                       style={{
                         flex: 1, textAlign: 'center', padding: '9px 0', borderRadius: 9, border: 'none',
@@ -590,6 +698,13 @@ export default function EditarGastoPage() {
                       if (!persona) return null
                       const montoPreview = preview[pid] ?? 0
                       const divVal = divisionValues.find(d => d.usuario_id === pid)
+                      const esManual = manualIds.has(pid)
+                      // Automático: el input va vacío y el valor calculado se
+                      // ve solo como placeholder — así nunca se mezcla con lo
+                      // que la persona escriba encima. Igual que en
+                      // NuevoGastoScreen.
+                      const valorInput = esManual ? (textos[pid] ?? '') : ''
+                      const placeholderAuto = String(divVal?.valor ?? 0)
 
                       return (
                         <div key={pid} style={{
@@ -608,10 +723,10 @@ export default function EditarGastoPage() {
                               <input
                                 type="text" inputMode="numeric" pattern="[0-9]*"
                                 aria-label={`Monto para ${persona.nombre}`}
-                                value={divVal?.valor || ''}
-                                onChange={e => setDivisionValor(pid, parseFloat(e.target.value) || 0)}
+                                value={valorInput}
+                                onChange={e => handleDivisionInputChange(pid, e.target.value)}
                                 disabled={tienePagos}
-                                placeholder="0"
+                                placeholder={placeholderAuto}
                                 style={{ ...inputBase, height: 38, paddingLeft: 22, paddingRight: 8, fontSize: 14, fontWeight: 600, borderRadius: 10, textAlign: 'right' }}
                                 onFocus={focusInput} onBlur={blurInput}
                               />
@@ -622,12 +737,12 @@ export default function EditarGastoPage() {
                             <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 2, width: 90 }}>
                               <div style={{ position: 'relative', width: '100%' }}>
                                 <input
-                                  type="text" inputMode="decimal"
+                                  type="text" inputMode="numeric" pattern="[0-9]*"
                                   aria-label={`Porcentaje para ${persona.nombre}`}
-                                  value={divVal?.valor || ''}
-                                  onChange={e => setDivisionValor(pid, parseFloat(e.target.value) || 0)}
+                                  value={valorInput}
+                                  onChange={e => handleDivisionInputChange(pid, e.target.value)}
                                   disabled={tienePagos}
-                                  placeholder="0"
+                                  placeholder={placeholderAuto}
                                   style={{ ...inputBase, height: 38, paddingRight: 22, paddingLeft: 8, fontSize: 14, fontWeight: 600, borderRadius: 10, textAlign: 'right' }}
                                   onFocus={focusInput} onBlur={blurInput}
                                 />
@@ -645,28 +760,33 @@ export default function EditarGastoPage() {
                 </Section>
               )}
 
-              <div style={{
-                marginBottom: 16, borderRadius: 14, padding: '14px 16px',
-                display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-                background: cuadrado ? 'var(--tint-cta)' : 'var(--color-negative-tint)',
-                border: `1px solid ${cuadrado ? 'var(--border-cta)' : 'var(--color-negative-border)'}`,
-              }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 9 }}>
-                  {cuadrado ? (
-                    <svg width="18" height="18" viewBox="0 0 20 20" fill="none"><circle cx="10" cy="10" r="8" stroke="var(--color-positive)" strokeWidth="1.6" /><path d="M6.5 10l2.4 2.4L14 7.5" stroke="var(--color-positive)" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" /></svg>
-                  ) : (
-                    <svg width="18" height="18" viewBox="0 0 20 20" fill="none"><circle cx="10" cy="10" r="8" stroke="var(--color-negative)" strokeWidth="1.6" /><path d="M10 6v5M10 13.5v.1" stroke="var(--color-negative)" strokeWidth="1.8" strokeLinecap="round" /></svg>
-                  )}
-                  <span style={{ fontSize: 13, fontWeight: 600, color: cuadrado ? '#4C3FB0' : 'var(--color-negative)', fontFamily: 'var(--font-dm-sans), sans-serif' }}>
-                    {cuadrado ? 'Todo cuadra' : 'No cuadra'}
+              {/* Banner de cuadre — no aplica a Partes iguales: ahí no hay
+                  nada que la persona tenga que hacer cuadrar, el reparto es
+                  automático y siempre exacto. Igual que en NuevoGastoScreen. */}
+              {tipoDivision !== 'igual' && (
+                <div style={{
+                  marginBottom: 16, borderRadius: 14, padding: '14px 16px',
+                  display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                  background: cuadrado ? 'var(--tint-cta)' : 'var(--color-negative-tint)',
+                  border: `1px solid ${cuadrado ? 'var(--border-cta)' : 'var(--color-negative-border)'}`,
+                }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 9 }}>
+                    {cuadrado ? (
+                      <svg width="18" height="18" viewBox="0 0 20 20" fill="none"><circle cx="10" cy="10" r="8" stroke="var(--color-positive)" strokeWidth="1.6" /><path d="M6.5 10l2.4 2.4L14 7.5" stroke="var(--color-positive)" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" /></svg>
+                    ) : (
+                      <svg width="18" height="18" viewBox="0 0 20 20" fill="none"><circle cx="10" cy="10" r="8" stroke="var(--color-negative)" strokeWidth="1.6" /><path d="M10 6v5M10 13.5v.1" stroke="var(--color-negative)" strokeWidth="1.8" strokeLinecap="round" /></svg>
+                    )}
+                    <span style={{ fontSize: 13, fontWeight: 600, color: cuadrado ? '#4C3FB0' : 'var(--color-negative)', fontFamily: 'var(--font-dm-sans), sans-serif' }}>
+                      {cuadrado ? 'Todo cuadra' : 'No cuadra'}
+                    </span>
+                  </div>
+                  <span style={{ fontFamily: 'var(--font-sora), sans-serif', fontSize: 15, fontWeight: 700, color: cuadrado ? '#4C3FB0' : 'var(--color-negative)' }}>
+                    {tipoDivision === 'porcentaje'
+                      ? `${sumaValores.toFixed(0)}% / 100%`
+                      : `${formatCLP(sumaValores)} / ${formatCLP(monto)}`}
                   </span>
                 </div>
-                <span style={{ fontFamily: 'var(--font-sora), sans-serif', fontSize: 15, fontWeight: 700, color: cuadrado ? '#4C3FB0' : 'var(--color-negative)' }}>
-                  {tipoDivision === 'porcentaje'
-                    ? `${sumaValores.toFixed(0)}% / 100%`
-                    : `${formatCLP(sumaValores)} / ${formatCLP(monto)}`}
-                </span>
-              </div>
+              )}
               {errores.divisiones && <ErrorMsg mensaje={errores.divisiones} />}
 
               <BotonCTA onClick={handleGuardar} loading={guardando}>

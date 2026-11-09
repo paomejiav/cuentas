@@ -129,6 +129,37 @@ export function hrefHomeGrupo(grupoId: string): string {
   return `/mis-grupos/${grupoId}`
 }
 
+/** Ruta del enlace de invitación a un grupo — único lugar que decide ese string. */
+export function hrefUnirseGrupo(codigo: string): string {
+  return `/grupo/unirse?codigo=${encodeURIComponent(codigo)}`
+}
+
+const CODIGO_PENDIENTE_KEY = 'bts_codigo_invitacion_pendiente'
+
+/**
+ * El código de un enlace de invitación abierto sin sesión se guarda acá para
+ * sobrevivir al correo de confirmación de registro, que puede abrirse en
+ * otro navegador (ahí localStorage no viaja — por eso además se puede
+ * escribir el código a mano desde "Unirme con código").
+ */
+export function guardarCodigoInvitacionPendiente(codigo: string): void {
+  try {
+    window.localStorage.setItem(CODIGO_PENDIENTE_KEY, codigo)
+  } catch {
+    // sin storage disponible: el código no sobrevive, pero no rompe nada
+  }
+}
+
+export function leerYBorrarCodigoInvitacionPendiente(): string | null {
+  try {
+    const codigo = window.localStorage.getItem(CODIGO_PENDIENTE_KEY)
+    if (codigo) window.localStorage.removeItem(CODIGO_PENDIENTE_KEY)
+    return codigo
+  } catch {
+    return null
+  }
+}
+
 export async function listarGruposActivos(usuarioId: string): Promise<GrupoNombre[]> {
   const data = await leer(
     supabase

@@ -1,8 +1,9 @@
 'use client'
 
-import { Suspense, useState } from 'react'
+import { Suspense, useEffect, useState } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
+import { guardarCodigoInvitacionPendiente } from '@/lib/grupo'
 import { Avatar } from '@/components/app/Avatar'
 import type { AuthError } from '@supabase/supabase-js'
 
@@ -239,6 +240,15 @@ function LoginInner() {
   const [recuperarError, setRecuperarError] = useState<string | null>(null)
   const [emailRecuperacion, setEmailRecuperacion] = useState('')
 
+  // El código de invitación de ?codigo= se guarda ya acá — si la persona
+  // elige crear cuenta, el correo de confirmación puede abrirse en otro
+  // navegador, donde este query param ya no está.
+  useEffect(() => {
+    const codigo = params.get('codigo')
+    if (codigo) guardarCodigoInvitacionPendiente(codigo)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
   function irA(v: Vista) {
     setVista(v)
     setLoginError(null)
@@ -279,8 +289,15 @@ function LoginInner() {
         setLoginNoConfirmado(noConfirmado)
         return
       }
-      // proxy.ts arma este param al rebotar desde una ruta protegida —
-      // solo aceptamos rutas relativas propias, nunca una URL externa.
+      // Si venía de un enlace de invitación, /grupo/unirse hace el join
+      // y manda a la home del grupo — con prioridad sobre el redirect
+      // genérico que arma proxy.ts al rebotar desde una ruta protegida.
+      const codigo = params.get('codigo')
+      if (codigo) {
+        router.replace(`/grupo/unirse?codigo=${encodeURIComponent(codigo)}`)
+        return
+      }
+      // Solo aceptamos rutas relativas propias, nunca una URL externa.
       const redirect = params.get('redirect')
       router.replace(redirect && redirect.startsWith('/') && !redirect.startsWith('//') ? redirect : '/')
     } catch {

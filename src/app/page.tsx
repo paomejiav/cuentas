@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { supabase } from '@/lib/supabase'
 import { obtenerSeleccion, seleccionarGrupo } from '@/lib/grupo-activo'
-import { listarGruposConIntegrantes, hrefHomeGrupo, type GrupoParaSheet } from '@/lib/grupo'
+import { listarGruposConIntegrantes, hrefHomeGrupo, leerYBorrarCodigoInvitacionPendiente, type GrupoParaSheet } from '@/lib/grupo'
 import {
   calcularSaldosGrupo, calcularSaldosPersonal,
   obtenerGastoMesGrupo, obtenerGastoMesPersonal,
@@ -431,6 +431,15 @@ function InicioPageInner() {
       const { data: { user } } = await supabase.auth.getUser()
       if (!user) { router.replace('/login'); return }
       setUsuarioId(user.id)
+
+      // Llegó de confirmar un registro con un código de invitación pendiente
+      // (guardado en /login antes del correo de confirmación) — lo unimos
+      // al grupo ahí, sin que tenga que volver a escribirlo.
+      const codigoPendiente = leerYBorrarCodigoInvitacionPendiente()
+      if (codigoPendiente) {
+        router.replace(`/grupo/unirse?codigo=${encodeURIComponent(codigoPendiente)}`)
+        return
+      }
 
       const [{ data: usuario }, { grupos: listaGrupos }] = await Promise.all([
         supabase.from('usuarios').select('nombre, avatar_color').eq('id', user.id).single(),

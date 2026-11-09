@@ -62,6 +62,13 @@ export async function proxy(request: NextRequest) {
     return response
   }
 
+  // El enlace de invitación a un grupo también es público a propósito: con
+  // o sin sesión, la propia pantalla decide a dónde mandar (unirse directo,
+  // o a login/registro con el código precargado).
+  if (pathname === '/grupo/unirse') {
+    return response
+  }
+
   if (!user) {
     const loginUrl = new URL('/login', request.url)
     loginUrl.searchParams.set('redirect', pathname)

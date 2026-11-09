@@ -4,7 +4,7 @@ import { useEffect, useState, useMemo } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import {
   editarGasto, validarPaso1, validarPaso2, calcularMontosPorPersona, listarParticipantesPosibles,
-  type TipoDivision, type DivisionInput,
+  gastoTieneDivisionesSaldadasOConPagos, type TipoDivision, type DivisionInput,
 } from '@/lib/gastos'
 import { formatCLP } from '@/lib/format'
 import { Avatar } from '@/components/app/Avatar'
@@ -162,6 +162,11 @@ export default function EditarGastoPage() {
   const [participantes, setParticipantes] = useState<string[]>([])
   const [tipoDivision, setTipoDivision] = useState<TipoDivision>('exacto')
   const [divisionValues, setDivisionValues] = useState<DivisionInput[]>([])
+  // Si el gasto ya tiene alguna división saldada o con pagos vinculados, no
+  // se puede tocar monto/pagador/participantes/tipo de división — igual se
+  // bloquea en editarGasto() aunque este chequeo fallara o se saltara. Ante
+  // un error al consultarlo, se asume que SÍ hay pagos (nunca al revés).
+  const [tienePagos, setTienePagos] = useState(false)
 
   function handleMontoChange(e: React.ChangeEvent<HTMLInputElement>) {
     const digits = e.target.value.replace(/\D/g, '')
@@ -188,7 +193,7 @@ export default function EditarGastoPage() {
       if (!gasto) { setNoEncontrado(true); setCargando(false); return }
       const g = gasto as GastoRow
 
-      const [{ data: divs }, listaPersonas] = await Promise.all([
+      const [{ data: divs }, listaPersonas, hayPagos] = await Promise.all([
         supabase.from('divisiones').select('usuario_id, monto_asignado').eq('gasto_id', id),
         // Gasto aislado (sin grupo): las personas posibles salen de los
         // contactos compartidos + vos mismo, no de grupo_miembros — ahí no
@@ -197,6 +202,7 @@ export default function EditarGastoPage() {
           ? listarParticipantesPosibles({ cuentaId: g.cuenta_id, grupoId: g.grupo_id })
           : Promise.all([obtenerUsuarioMini(user.id), listarContactosCompartidos(user.id)])
               .then(([yo, contactos]) => (yo ? [yo, ...contactos] : contactos)),
+        gastoTieneDivisionesSaldadasOConPagos(id).catch(() => true),
       ])
       if (!activo) return
 
@@ -208,6 +214,7 @@ export default function EditarGastoPage() {
       setCategoria(g.categoria)
       setFecha(g.fecha)
       setNota(g.nota ?? '')
+      setTienePagos(hayPagos)
 
       const divisiones = (divs as DivisionRow[]) ?? []
       setParticipantes(divisiones.map(d => d.usuario_id))
@@ -264,20 +271,29 @@ export default function EditarGastoPage() {
   }
 
   async function handleGuardar() {
-    const errs = validarPaso2(monto, tipoDivision, participantes, divisionValues)
-    if (errs.length > 0) {
-      const map: Record<string, string> = {}
-      errs.forEach(e => { map[e.campo] = e.mensaje })
-      setErrores(map)
-      return
+    if (!tienePagos) {
+      const errs = validarPaso2(monto, tipoDivision, participantes, divisionValues)
+      if (errs.length > 0) {
+        const map: Record<string, string> = {}
+        errs.forEach(e => { map[e.campo] = e.mensaje })
+        setErrores(map)
+        return
+      }
     }
     setErrores({})
     setGuardando(true)
 
-    const result = await editarGasto(id, {
-      descripcion, monto_total: monto, pagado_por: pagadoPor, categoria, fecha, nota,
-      tipo_division: tipoDivision, participantes, divisiones: divisionValues,
-    })
+    // Con pagos registrados, ni siquiera se envían monto/pagador/
+    // participantes/divisiones — así nunca se activa la barrera de
+    // editarGasto() por un valor "sin cambios" que de todas formas la
+    // rechazaría.
+    const result = await editarGasto(id, tienePagos
+      ? { descripcion, categoria, fecha, nota }
+      : {
+          descripcion, monto_total: monto, pagado_por: pagadoPor, categoria, fecha, nota,
+          tipo_division: tipoDivision, participantes, divisiones: divisionValues,
+        }
+    )
 
     setGuardando(false)
 
@@ -346,12 +362,24 @@ export default function EditarGastoPage() {
         </header>
 
         <main style={{ padding: '0 var(--page-px)' }}>
+          {tienePagos && (
+            <Section>
+              <div style={{
+                borderRadius: 14, padding: '12px 14px',
+                background: 'var(--color-negative-tint)', border: '1px solid var(--color-negative-border)',
+              }}>
+                <p style={{ margin: 0, fontSize: 12.5, color: 'var(--color-negative)', fontFamily: 'var(--font-dm-sans), sans-serif', lineHeight: 1.45 }}>
+                  Este gasto ya tiene pagos registrados, así que no puedes cambiar los montos ni a quienes participan.
+                </p>
+              </div>
+            </Section>
+          )}
           {paso === 1 && (
             <>
               <Section>
                 <div style={{
                   background: 'var(--color-surface-white)', border: '1px solid var(--color-border)',
-                  borderRadius: 18, padding: '22px 20px', textAlign: 'center',
+                  borderRadius: 18, padding: '22px 20px', textAlign: 'center', opacity: tienePagos ? 0.6 : 1,
                 }}>
                   <p style={{ margin: 0, fontSize: 12, color: 'var(--color-neutral)', fontFamily: 'var(--font-dm-sans), sans-serif' }}>
                     ¿Cuánto fue?
@@ -360,6 +388,7 @@ export default function EditarGastoPage() {
                     <input
                       type="text" inputMode="numeric" placeholder="$0" autoComplete="off"
                       value={displayMonto} onChange={handleMontoChange}
+                      disabled={tienePagos}
                       aria-invalid={!!errores.monto}
                       style={{
                         border: 'none', outline: 'none', background: 'transparent',
@@ -415,16 +444,17 @@ export default function EditarGastoPage() {
 
               <Section>
                 <Label>¿Quién pagó?</Label>
-                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 14 }}>
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 14, opacity: tienePagos ? 0.6 : 1 }}>
                   {personas.map(p => {
                     const activo = pagadoPor === p.id
                     return (
                       <button
                         key={p.id}
-                        onClick={() => setPagadoPor(p.id)}
+                        onClick={() => !tienePagos && setPagadoPor(p.id)}
+                        disabled={tienePagos}
                         style={{
                           display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 5,
-                          background: 'transparent', border: 'none', cursor: 'pointer', padding: 0,
+                          background: 'transparent', border: 'none', cursor: tienePagos ? 'default' : 'pointer', padding: 0,
                           WebkitTapHighlightColor: 'transparent',
                         }}
                       >
@@ -474,21 +504,22 @@ export default function EditarGastoPage() {
             <>
               <div style={{
                 display: 'flex', background: 'var(--color-card-light)', borderRadius: 12,
-                padding: 4, gap: 3, marginBottom: 16,
+                padding: 4, gap: 3, marginBottom: 16, opacity: tienePagos ? 0.6 : 1,
               }}>
                 {TIPOS_DIVISION.map(t => {
                   const activo = tipoDivision === t.id
                   return (
                     <button
                       key={t.id}
-                      onClick={() => cambiarTipoDivision(t.id)}
+                      onClick={() => !tienePagos && cambiarTipoDivision(t.id)}
+                      disabled={tienePagos}
                       style={{
                         flex: 1, textAlign: 'center', padding: '9px 0', borderRadius: 9, border: 'none',
                         background: activo ? 'var(--color-cta)' : 'transparent',
                         color: activo ? 'white' : 'var(--color-text-secondary)',
                         fontSize: 12.5, fontWeight: activo ? 700 : 600,
                         fontFamily: 'var(--font-dm-sans), sans-serif',
-                        cursor: 'pointer', transition: 'all 150ms ease',
+                        cursor: tienePagos ? 'default' : 'pointer', transition: 'all 150ms ease',
                         boxShadow: activo ? '0 2px 6px -1px rgba(124,107,240,.4)' : 'none',
                         WebkitTapHighlightColor: 'transparent',
                       }}
@@ -501,19 +532,20 @@ export default function EditarGastoPage() {
 
               <Section>
                 <Label>Incluir a</Label>
-                <div style={{ background: 'var(--color-card)', border: '1px solid var(--color-border)', borderRadius: 18, padding: '4px 16px' }}>
+                <div style={{ background: 'var(--color-card)', border: '1px solid var(--color-border)', borderRadius: 18, padding: '4px 16px', opacity: tienePagos ? 0.6 : 1 }}>
                   {personas.map((p, idx) => {
                     const incluido = participantes.includes(p.id)
                     const montoPreview = preview[p.id] ?? 0
                     return (
                       <button
                         key={p.id}
-                        onClick={() => toggleParticipante(p.id)}
+                        onClick={() => !tienePagos && toggleParticipante(p.id)}
+                        disabled={tienePagos}
                         style={{
                           display: 'flex', alignItems: 'center', gap: 12, width: '100%',
                           padding: '13px 0', border: 'none', background: 'transparent',
                           borderBottom: idx === personas.length - 1 ? 'none' : '1px solid var(--color-divider)',
-                          cursor: 'pointer', textAlign: 'left', opacity: incluido ? 1 : 0.5,
+                          cursor: tienePagos ? 'default' : 'pointer', textAlign: 'left', opacity: incluido ? 1 : 0.5,
                           WebkitTapHighlightColor: 'transparent',
                         }}
                       >
@@ -578,6 +610,7 @@ export default function EditarGastoPage() {
                                 aria-label={`Monto para ${persona.nombre}`}
                                 value={divVal?.valor || ''}
                                 onChange={e => setDivisionValor(pid, parseFloat(e.target.value) || 0)}
+                                disabled={tienePagos}
                                 placeholder="0"
                                 style={{ ...inputBase, height: 38, paddingLeft: 22, paddingRight: 8, fontSize: 14, fontWeight: 600, borderRadius: 10, textAlign: 'right' }}
                                 onFocus={focusInput} onBlur={blurInput}
@@ -593,6 +626,7 @@ export default function EditarGastoPage() {
                                   aria-label={`Porcentaje para ${persona.nombre}`}
                                   value={divVal?.valor || ''}
                                   onChange={e => setDivisionValor(pid, parseFloat(e.target.value) || 0)}
+                                  disabled={tienePagos}
                                   placeholder="0"
                                   style={{ ...inputBase, height: 38, paddingRight: 22, paddingLeft: 8, fontSize: 14, fontWeight: 600, borderRadius: 10, textAlign: 'right' }}
                                   onFocus={focusInput} onBlur={blurInput}

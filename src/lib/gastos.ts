@@ -176,10 +176,47 @@ export interface DatosEdicion {
   divisiones?: DivisionInput[]
 }
 
+// Una división ya saldada, o con pago_divisiones vinculados, es evidencia de
+// que hubo un pago real — se revisan ambas señales porque en
+// confirmarCancelacionesCadena (cierre.ts) el insert en pago_divisiones y el
+// update de saldado son dos pasos separados: si uno falla a medio camino,
+// solo una de las dos queda escrita.
+export async function gastoTieneDivisionesSaldadasOConPagos(gastoId: string): Promise<boolean> {
+  const { data, error } = await supabase
+    .from('divisiones')
+    .select('saldado, pago_divisiones ( id )')
+    .eq('gasto_id', gastoId)
+
+  if (error) throw error
+
+  return ((data ?? []) as unknown as { saldado: boolean; pago_divisiones: { id: string }[] }[])
+    .some(d => d.saldado || d.pago_divisiones.length > 0)
+}
+
 export async function editarGasto(
   gastoId: string,
   datos: DatosEdicion
 ): Promise<{ ok: true } | { ok: false; error: string }> {
+  // Barrera de seguridad: si el gasto ya tiene alguna división saldada o con
+  // pagos, no se toca nada si el cambio afecta monto, pagador o
+  // participantes — aunque la pantalla haya fallado en bloquearlo. Si ni
+  // siquiera se puede confirmar si hay pagos, se rechaza igual por las
+  // dudas (nunca se asume "no hay pagos" ante un error).
+  const tocaMontoPagadorOParticipantes =
+    datos.monto_total !== undefined || datos.pagado_por !== undefined || datos.participantes !== undefined
+
+  if (tocaMontoPagadorOParticipantes) {
+    let tienePagos: boolean
+    try {
+      tienePagos = await gastoTieneDivisionesSaldadasOConPagos(gastoId)
+    } catch {
+      return { ok: false, error: 'No se pudo confirmar si este gasto ya tiene pagos registrados. Por seguridad, no se guardó ningún cambio en montos ni participantes.' }
+    }
+    if (tienePagos) {
+      return { ok: false, error: 'Este gasto ya tiene pagos registrados, así que no puedes cambiar los montos ni a quienes participan.' }
+    }
+  }
+
   // Actualizar campos del gasto
   const campos: Record<string, unknown> = {}
   if (datos.descripcion !== undefined) campos.descripcion = datos.descripcion.trim()
